@@ -190,8 +190,6 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 for epoch in range(max_epochs):
-    classifier.train()
-
     # Forward pass
     y_predictions = classifier(X_train)
 
@@ -205,22 +203,24 @@ for epoch in range(max_epochs):
     # Gradient Descent
     optim.step()
 
-    # Evaluation
-    classifier.eval()
+    # Take metrics
+    if epoch % metrics_interval == 0:
+        # Evaluation
+        classifier.eval()
 
-    with torch.inference_mode():
-        test_pred = classifier(X_test)
-        test_loss = loss_fn(test_pred, y_test)
-        test_accuracy = accuracy_test(y_test, test_pred)
+        with torch.inference_mode():
+            test_pred = classifier(X_test)
+            test_loss = loss_fn(test_pred, y_test)
+            test_accuracy = accuracy_test(y_test, test_pred)
 
-        # Take metrics
-        if epoch % metrics_interval == 0:
             print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
             torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
             epoch_count.append(epoch)
             loss_values.append(loss)
             test_losses.append(test_loss)
             test_accuracies.append(test_accuracy)
+
+        classifier.train()
 
         # Stop if accurate enough
         # if test_loss <= accuracy:
