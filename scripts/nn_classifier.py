@@ -36,7 +36,8 @@ parser = argparse.ArgumentParser(description="Trains or uses a neural network cl
 
 # Arguments for tool
 arguments = parser.add_argument_group("Arguments")
-arguments.add_argument("-i", "--input", help="Path to input data as csv", required=True)
+arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
+arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
 arguments.add_argument("-p", "--path", help="Path to save neural network", default="classifier")
 arguments.add_argument("-c","--cuda", help="Boolean to enable/disable cuda. Tries to use gpu by default", default=True)
 arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.01)
@@ -49,6 +50,7 @@ arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or
 arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
 arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
 
+torch.manual_seed(42)
 
 # Parse arguments
 args = parser.parse_args()
@@ -60,21 +62,35 @@ if device == "cuda":
 
 # Load and validate the input data
 try:
-    df = pd.read_csv(args.input)
+    dftr = pd.read_csv(args.input_train)
 except FileNotFoundError:
-    print("Could not load input data")
+    print("Could not load input training data")
     sys.exit(1)
 
-df_keys = list(df.keys())
-if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
-    print("Input does not contain sampleID, read_count, or HC_subCST")
-    sys.exit(2)
+try:
+    dfte = pd.read_csv(args.input_test)
+except FileNotFoundError:
+    print("Could not load input test data")
+    sys.exit(1)
+
+def check_keys(df_keys, in_type):
+    if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
+        print(f"{in_type} input does not contain sampleID, read_count, or HC_subCST")
+        sys.exit(2)
+
+check_keys(list(dftr.keys()), "Training")
+check_keys(list(dfte.keys()), "Testing")
 
 # Shuffle data before splitting
-df = df.sample(frac=1).reset_index(drop=True)
+dftr = dftr.sample(frac=1).reset_index(drop=True)
+dfte = dfte.sample(frac=1).reset_index(drop=True)
 
 # Create helper functions for formatting CST 'labels' for the neural network
-all_labels = list(set(df["HC_subCST"]))
+if set(dftr["HC_subCST"]) != set(dfte["HC_subCST"]):
+    print("Training and test set do not contain same CSTs")
+    sys.exit(2)
+
+all_labels = list(set(dftr["HC_subCST"]))
 
 def i_to_lbl(i):
     return all_labels[i.argmax()]
@@ -83,24 +99,35 @@ def lbl_to_i(lbl):
     return np.eye(len(all_labels))[all_labels.index(lbl)]
 
 # Generate label data
-labels = torch.tensor(np.array([lbl_to_i(x) for x in list(df["HC_subCST"])])).to(device).type(torch.float)
+test_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dfte["HC_subCST"])])).to(device).type(torch.float)
+train_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dftr["HC_subCST"])])).to(device).type(torch.float)
 
 # Create normalized the data so each sample is proportional
-normalized_data = df.drop(columns=["sampleID", "read_count", "HC_subCST"])
-count_columns = normalized_data.columns
+normalized_train_data = dftr.drop(columns=["sampleID", "read_count", "HC_subCST"])
+normalized_test_data = dfte.drop(columns=["sampleID", "read_count", "HC_subCST"])
+
+if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
+    print("Training and test set do not contain same count columns")
+    print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
+    sys.exit(2)
+
+count_columns = normalized_train_data.columns
+
+# TODO: Handle if two files have same columns in different order?
 
 for column in count_columns:
-    normalized_data[column] /= df["read_count"]
+    normalized_train_data[column] /= dftr["read_count"]
+    normalized_test_data[column] /= dfte["read_count"]
 
 # Format for neural net
-training_data = torch.tensor(normalized_data[count_columns].to_numpy()).to(device).type(torch.float)
+training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).to(device).type(torch.float)
+testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).to(device).type(torch.float)
 
 # Split training data into the train and test sets  
-train_split = int(args.split * len(training_data))
-print(f"Training split: {train_split}")
+print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
 
-X_train, y_train = training_data[:train_split], labels[:train_split]
-X_test, y_test = training_data[train_split:], labels[train_split:]
+X_train, y_train = training_data, train_labels
+X_test, y_test = testing_data, test_labels
 
 if args.split == 1:
     print("Training on all given data. No data will be reserved for metrics")
