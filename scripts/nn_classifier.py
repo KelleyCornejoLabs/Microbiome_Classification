@@ -6,6 +6,7 @@
 #          sample in the input data
 
 import sys
+import time
 
 try:
     import pandas as pd
@@ -107,7 +108,7 @@ normalized_train_data = dftr.drop(columns=["sampleID", "read_count", "HC_subCST"
 normalized_test_data = dfte.drop(columns=["sampleID", "read_count", "HC_subCST"])
 
 if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
-    print("Training and test set do not contain same count columns")
+    print("Training and test set do not contain same count columns, or they are not in the same order")
     print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
     sys.exit(2)
 
@@ -161,14 +162,19 @@ else:
         nn.Softmax(dim=1)
     ).to(device)
 
-# TODO: Test following
-# Could create list of n layers of nn.Linear() with a formula to calculate layer size (constant or decreasing)
-# and then do nn.Sequesntial(*list)
-# But that wouldn't be good for consistency across multiple studies
+# TODO: Test nmodel architectures
 
 # TODO: try argmax before nll loss?
 
-# TODO: Add column for what each sample was assigned
+# TODO: Add column for what each sample was assigned in output
+
+# Found out what proportion of the data each CST makes
+entries = dftr.groupby(['HC_subCST']).count()['sampleID']
+
+# TODO: Test this with more metrics. It will affect how the model learns rarer classes
+# Get in order of what index each label is in training data
+ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
+ordered_prevelence *= 1/ordered_prevelence.min()
 
 # Set up optimizer/loss
 try:
@@ -177,13 +183,12 @@ except TypeError:
     print("Learning rate must be float")
     sys.exit(3)
 
-# NOTE: Cross entropy can take weight for unbalenced sets. try that
 # NOTE: Use more metrics (see 2.ipynb). Do per-class accuracy? Confudsion matrix!!
 # https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
-loss_fn = losses[args.loss]()
+loss_fn = losses[args.loss](weight=ordered_prevelence)
 optim = optims[args.optim](params=classifier.parameters(), lr=lr)
 
 # Tracking
@@ -215,6 +220,9 @@ def accuracy_test(lbls, predictions):
     # Do argmax to get index, so as not to do torch.eq on a 2d array
     correct = torch.eq(torch.Tensor([lbl.argmax() for lbl in lbls]), torch.Tensor([p.argmax() for p in predictions])).sum().item()
     return (correct / len(predictions)) * 100
+
+# Track time
+start_time = time.time()
 
 for epoch in range(max_epochs):
     # Forward pass
@@ -256,14 +264,21 @@ for epoch in range(max_epochs):
 # Save model
 torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
 
+# Calculate time
+time_now = time.time()
+time_taken = f"{int((time_now - start_time) / 3600)}:{int(((time_now - start_time) / 60) % 60)}:{int((time_now - start_time) % 60)}"
+
 # Write metrics
 with torch.inference_mode():
     y_predictions = classifier(X_test)
     accuracy = accuracy_test(y_test, y_predictions)
     
     with open(args.path+"_metrics.txt", "w") as f:
-        print(f"Final Accuracy: {accuracy}%")
-        f.write(f"Final Accuracy: {accuracy}\n")
+        print(f"Final Accuracy: {accuracy}% in {time_taken}")
+        f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
+
+        print(f"Test Config: lr: {lr}, linear: {not (args.linear == 'False')}, loss_fn: {args.loss}, optim: {args.optim}")
+        f.write(f"Final Accuracy: {accuracy}% in {time_taken}. Max acc: {max(test_accuracies)}\n")
 
         print(f"{len(epoch_count), len(loss_values), len(test_losses)}")
         for i in range(len(epoch_count)):
