@@ -33,257 +33,289 @@ except:
     print("Required package torch not available")
     exit()
 
-parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
-
-# Arguments for tool
-arguments = parser.add_argument_group("Arguments")
-arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
-arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
-arguments.add_argument("-p", "--path", help="Path to save neural network", default="classifier")
-arguments.add_argument("-c","--cuda", help="Boolean to enable/disable cuda. Tries to use gpu by default", default=True)
-arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.01)
-arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
-arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
-arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=None)
-arguments.add_argument("-s","--split", help="What fraction of data should go to training?", default=0.6)
-arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
-arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
-arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
-arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
-
-torch.manual_seed(42)
-
-# Parse arguments
-args = parser.parse_args()
-
 # Set up GPU
-device = "cuda" if torch.cuda.is_available() and args.cuda != "False" else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 if device == "cuda":
     print("Using GPU")
 
-# Load and validate the input data
-try:
-    dftr = pd.read_csv(args.input_train)
-except FileNotFoundError:
-    print("Could not load input training data")
-    sys.exit(1)
+def load_data(train_path, test_path):
+    # Load and validate the input data
+    try:
+        dftr = pd.read_csv(args.input_train)
+    except FileNotFoundError:
+        print("Could not load input training data")
+        sys.exit(1)
 
-try:
-    dfte = pd.read_csv(args.input_test)
-except FileNotFoundError:
-    print("Could not load input test data")
-    sys.exit(1)
+    try:
+        dfte = pd.read_csv(args.input_test)
+    except FileNotFoundError:
+        print("Could not load input test data")
+        sys.exit(1)
 
-def check_keys(df_keys, in_type):
-    if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
-        print(f"{in_type} input does not contain sampleID, read_count, or HC_subCST")
+    def check_keys(df_keys, in_type):
+        if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
+            print(f"{in_type} input does not contain sampleID, read_count, or HC_subCST")
+            sys.exit(2)
+
+    check_keys(list(dftr.keys()), "Training")
+    check_keys(list(dfte.keys()), "Testing")
+
+    # Shuffle data before splitting
+    dftr = dftr.sample(frac=1).reset_index(drop=True)
+    dfte = dfte.sample(frac=1).reset_index(drop=True)
+
+    # Create helper functions for formatting CST 'labels' for the neural network
+    if set(dftr["HC_subCST"]) != set(dfte["HC_subCST"]):
+        print("Training and test set do not contain same CSTs")
         sys.exit(2)
 
-check_keys(list(dftr.keys()), "Training")
-check_keys(list(dfte.keys()), "Testing")
+    all_labels = list(set(dftr["HC_subCST"]))
 
-# Shuffle data before splitting
-dftr = dftr.sample(frac=1).reset_index(drop=True)
-dfte = dfte.sample(frac=1).reset_index(drop=True)
+    def i_to_lbl(i):
+        return all_labels[i.argmax()]
 
-# Create helper functions for formatting CST 'labels' for the neural network
-if set(dftr["HC_subCST"]) != set(dfte["HC_subCST"]):
-    print("Training and test set do not contain same CSTs")
-    sys.exit(2)
+    def lbl_to_i(lbl):
+        return np.eye(len(all_labels))[all_labels.index(lbl)]
 
-all_labels = list(set(dftr["HC_subCST"]))
+    # Generate label data
+    test_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dfte["HC_subCST"])])).to(device).type(torch.float)
+    train_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dftr["HC_subCST"])])).to(device).type(torch.float)
 
-def i_to_lbl(i):
-    return all_labels[i.argmax()]
+    # Create normalized the data so each sample is proportional
+    normalized_train_data = dftr.drop(columns=["sampleID", "read_count", "HC_subCST"])
+    normalized_test_data = dfte.drop(columns=["sampleID", "read_count", "HC_subCST"])
 
-def lbl_to_i(lbl):
-    return np.eye(len(all_labels))[all_labels.index(lbl)]
+    if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
+        print("Training and test set do not contain same count columns, or they are not in the same order")
+        print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
+        sys.exit(2)
 
-# Generate label data
-test_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dfte["HC_subCST"])])).to(device).type(torch.float)
-train_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dftr["HC_subCST"])])).to(device).type(torch.float)
+    count_columns = normalized_train_data.columns
 
-# Create normalized the data so each sample is proportional
-normalized_train_data = dftr.drop(columns=["sampleID", "read_count", "HC_subCST"])
-normalized_test_data = dfte.drop(columns=["sampleID", "read_count", "HC_subCST"])
+    # TODO: Handle if two files have same columns in different order?
 
-if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
-    print("Training and test set do not contain same count columns, or they are not in the same order")
-    print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
-    sys.exit(2)
+    for column in count_columns:
+        normalized_train_data[column] /= dftr["read_count"]
+        normalized_test_data[column] /= dfte["read_count"]
 
-count_columns = normalized_train_data.columns
+    # Format for neural net
+    training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).to(device).type(torch.float)
+    testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).to(device).type(torch.float)
 
-# TODO: Handle if two files have same columns in different order?
+    # Split training data into the train and test sets  
+    print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
 
-for column in count_columns:
-    normalized_train_data[column] /= dftr["read_count"]
-    normalized_test_data[column] /= dfte["read_count"]
+    X_train, y_train = training_data, train_labels
+    X_test, y_test = testing_data, test_labels
 
-# Format for neural net
-training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).to(device).type(torch.float)
-testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).to(device).type(torch.float)
+    # if split:
+    #     print("Training on all given data. No data will be reserved for metrics")
+    #     X_test = X_train
+    #     y_test = y_train
 
-# Split training data into the train and test sets  
-print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
+    print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
 
-X_train, y_train = training_data, train_labels
-X_test, y_test = testing_data, test_labels
+    # Found out what proportion of the data each CST makes
+    entries = dftr.groupby(['HC_subCST']).count()['sampleID']
 
-if args.split == 1:
-    print("Training on all given data. No data will be reserved for metrics")
-    X_test = X_train
-    y_test = y_train
+    # TODO: Test this with more metrics. It will affect how the model learns rarer classes
+    # Get in order of what index each label is in training data
+    ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
+    ordered_prevelence *= 1/ordered_prevelence.min()
 
-print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
+    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence
 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
+def generate_model(linear, train_features, hidden_features, classes):
+    if linear == False:
+        print(f"Non-linear {train_features} -> {classes}")
+        classifier = nn.Sequential(
+            nn.Linear(in_features=train_features, out_features=101),
+            nn.ReLU(),
+            nn.Linear(in_features=101, out_features=51),
+            nn.ReLU(),
+            nn.Linear(in_features=51, out_features=26),
+            nn.ReLU(),
+            nn.Linear(in_features=26, out_features=classes),
+            nn.Softmax(dim=1)
+        ).to(device)
+    else:
+        print(f"Linear {train_features} -> {classes}")
+        classifier = nn.Sequential(
+            nn.Linear(in_features=train_features, out_features=101),
+            nn.Linear(in_features=101, out_features=51),
+            nn.Linear(in_features=51, out_features=26),
+            nn.Linear(in_features=26, out_features=13),
+            nn.Softmax(dim=1)
+        ).to(device)
 
-if args.linear == "False":
-    print("Non-linear")
-    classifier = nn.Sequential(
-        nn.Linear(in_features=len(training_data[0]), out_features=101),
-        nn.ReLU(),
-        nn.Linear(in_features=101, out_features=51),
-        nn.ReLU(),
-        nn.Linear(in_features=51, out_features=26),
-        nn.ReLU(),
-        nn.Linear(in_features=26, out_features=13),
-        nn.Softmax(dim=1)
-    ).to(device)
-else:
-    print("Linear")
-    classifier = nn.Sequential(
-        nn.Linear(in_features=len(training_data[0]), out_features=101),
-        nn.Linear(in_features=101, out_features=51),
-        nn.Linear(in_features=51, out_features=26),
-        nn.Linear(in_features=26, out_features=13),
-        nn.Softmax(dim=1)
-    ).to(device)
+    return classifier
 
 # TODO: Test nmodel architectures
 
-# TODO: try argmax before nll loss?
-
-# TODO: Add column for what each sample was assigned in output
-
-# Found out what proportion of the data each CST makes
-entries = dftr.groupby(['HC_subCST']).count()['sampleID']
-
-# TODO: Test this with more metrics. It will affect how the model learns rarer classes
-# Get in order of what index each label is in training data
-ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
-ordered_prevelence *= 1/ordered_prevelence.min()
-
-# Set up optimizer/loss
-try:
-    lr = float(args.learning_rate)
-except TypeError:
-    print("Learning rate must be float")
-    sys.exit(3)
-
-# NOTE: Use more metrics (see 2.ipynb). Do per-class accuracy? Confudsion matrix!!
-# https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c
-losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
-optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
-
-loss_fn = losses[args.loss](weight=ordered_prevelence)
-optim = optims[args.optim](params=classifier.parameters(), lr=lr)
-
-# Tracking
-epoch_count = []
-loss_values = []
-test_losses = []
-test_accuracies = []
-
-try: 
-    max_epochs = int(args.max_epochs)
-except TypeError:
-    print("max epochs must be int")
-    sys.exit(3)
-
-try: 
-    metrics_interval = int(args.metrics_interval)
-except TypeError:
-    print("metrics interval must be int")
-    sys.exit(3)
-
-try: 
-    accuracy = int(args.accuracy)
-except TypeError:
-    print("accuracy must be int")
-    sys.exit(3)
-
-# Define function to find accuracy of
+# Define function to find accuracy of model
 def accuracy_test(lbls, predictions):
     # Do argmax to get index, so as not to do torch.eq on a 2d array
     correct = torch.eq(torch.Tensor([lbl.argmax() for lbl in lbls]), torch.Tensor([p.argmax() for p in predictions])).sum().item()
     return (correct / len(predictions)) * 100
 
-# Track time
-start_time = time.time()
+def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
+          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevelance):
 
-for epoch in range(max_epochs):
-    # Forward pass
-    y_predictions = classifier(X_train)
-
-    # Calculate loss
-    loss = loss_fn(y_predictions, y_train)
-
-    # Backpropagate
-    optim.zero_grad()
-    loss.backward()
+    def i_to_lbl(i):
+        return all_labels[i.argmax()]
     
-    # Gradient Descent
-    optim.step()
-
-    # Take metrics
-    if epoch % metrics_interval == 0:
-        # Evaluation
-        classifier.eval()
-
-        with torch.inference_mode():
-            test_pred = classifier(X_test)
-            test_loss = loss_fn(test_pred, y_test)
-            test_accuracy = accuracy_test(y_test, test_pred)
-
-            print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
-            torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
-            epoch_count.append(epoch)
-            loss_values.append(loss)
-            test_losses.append(test_loss)
-            test_accuracies.append(test_accuracy)
-
-        classifier.train()
-
-        # Stop if accurate enough
-        # if test_loss <= accuracy:
-        #     break
-
-# Save model
-torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
-
-# Calculate time
-time_now = time.time()
-time_taken = f"{int((time_now - start_time) / 3600)}:{int(((time_now - start_time) / 60) % 60)}:{int((time_now - start_time) % 60)}"
-
-# Write metrics
-with torch.inference_mode():
-    y_predictions = classifier(X_test)
-    accuracy = accuracy_test(y_test, y_predictions)
+    def lbl_to_i(lbl):
+        return np.eye(len(all_labels))[all_labels.index(lbl)]
     
-    with open(args.path+"_metrics.txt", "w") as f:
-        print(f"Final Accuracy: {accuracy}% in {time_taken}")
-        f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
+    # TODO: try argmax before nll loss?
 
-        print(f"Test Config: lr: {lr}, linear: {not (args.linear == 'False')}, loss_fn: {args.loss}, optim: {args.optim}")
-        f.write(f"Final Accuracy: {accuracy}% in {time_taken}. Max acc: {max(test_accuracies)}\n")
+    # TODO: Add column for what each sample was assigned in output
 
-        print(f"{len(epoch_count), len(loss_values), len(test_losses)}")
-        for i in range(len(epoch_count)):
-            f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
+    # Set up optimizer/loss
 
-        f.write("Cases: \n")
-        for i in range(10):
-            f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(y_predictions[i])}\n")
+    # NOTE: Use more metrics (see 2.ipynb). Do per-class accuracy? Confudsion matrix!!
+    # https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c
+    losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
+    optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
+
+    loss_fn = losses[args.loss](weight=ordered_prevelence)
+    optim = optims[args.optim](params=classifier.parameters(), lr=lr)
+
+    # Tracking
+    epoch_count = []
+    loss_values = []
+    test_losses = []
+    test_accuracies = []
+
+    # Track time
+    start_time = time.time()
+
+    for epoch in range(max_epochs):
+        # Forward pass
+        y_predictions = classifier(X_train)
+
+        # Calculate loss
+        loss = loss_fn(y_predictions, y_train)
+
+        # Backpropagate
+        optim.zero_grad()
+        loss.backward()
+
+        # Gradient Descent
+        optim.step()
+
+        # Take metrics
+        if epoch % metrics_interval == 0:
+            # Evaluation
+            classifier.eval()
+
+            with torch.inference_mode():
+                test_pred = classifier(X_test)
+                test_loss = loss_fn(test_pred, y_test)
+                test_accuracy = accuracy_test(y_test, test_pred)
+
+                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
+                torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
+                epoch_count.append(epoch)
+                loss_values.append(loss)
+                test_losses.append(test_loss)
+                test_accuracies.append(test_accuracy)
+
+            classifier.train()
+
+            # Stop if accurate enough
+            # if test_loss <= accuracy:
+            #     break
+
+    # Save model
+    torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
+
+    # Calculate time
+    time_now = time.time()
+    time_taken = f"{int((time_now - start_time) / 3600)}:{int(((time_now - start_time) / 60) % 60)}:{int((time_now - start_time) % 60)}"
+
+    # Write metrics
+    with torch.inference_mode():
+        y_predictions = classifier(X_test)
+        accuracy = accuracy_test(y_test, y_predictions)
+
+        with open(args.path+"_metrics.txt", "w") as f:
+            print(f"Final Accuracy: {accuracy}% in {time_taken}")
+            f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
+
+            print(f"Test Config: lr: {lr}, linear: {not (args.linear == 'False')}, loss_fn: {args.loss}, optim: {args.optim}")
+            f.write(f"Final Accuracy: {accuracy}% in {time_taken}. Max acc: {max(test_accuracies)}\n")
+
+            print(f"{len(epoch_count), len(loss_values), len(test_losses)}")
+            for i in range(len(epoch_count)):
+                f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
+
+            f.write("Cases: \n")
+            for i in range(10):
+                f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(y_predictions[i])}\n")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
+
+    # Arguments for tool
+    arguments = parser.add_argument_group("Arguments")
+    arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
+    arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
+    arguments.add_argument("-p", "--path", help="Path to save neural network", default="classifier")
+    arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.01)
+    arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
+    arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
+    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=None)
+    arguments.add_argument("-s","--split", help="What fraction of data should go to training?", default=0.6)
+    arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
+    arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
+    arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
+    arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
+    arguments.add_argument("-sd","--seed", help="Don't use ReLU?", default=None)
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Set seed
+    if args.seed is not None:
+        try:
+            seed = int(args.seed)
+        except TypeError:
+            print("Seed must be an int")
+            sys.exit(1)
+
+        torch.manual_seed(seed)
+
+    linear = args.linear = "True"
+
+    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
+    classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+
+    try:
+        lr = float(args.learning_rate)
+    except TypeError:
+        print("Learning rate must be float")
+        sys.exit(3)
+
+    try: 
+        max_epochs = int(args.max_epochs)
+    except TypeError:
+        print("max epochs must be int")
+        sys.exit(3)
+
+    try: 
+        metrics_interval = int(args.metrics_interval)
+    except TypeError:
+        print("metrics interval must be int")
+        sys.exit(3)
+
+    try: 
+        accuracy = int(args.accuracy)
+    except TypeError:
+        print("accuracy must be int")
+        sys.exit(3)
+
+    train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
+          args.loss, args.optim, linear, all_labels, ordered_prevelence)
