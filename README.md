@@ -7,3 +7,5 @@ This script takes the data provided in the [VALENCIA project's repository](https
 For evaluation of each classification method, data from the VALENCIA project is split into a training and validation set. This tool creates those sets from the preprocessed data.
 ## nn_classifier.py
 This script trains and deploys the neural network classifier for microbiome count data. It creates a file containing the network and a file containing metric data from the training process. For training, it takes a training set and test set as input. Use make_test_train_split.py for making the split. For comparing different model's performance, split the data once to reserve a validation set, then split the training data again to create the training/test sets for creating models.
+## nn_trainer.py
+This script trains multiple classifiers, and finds the most performant hyperperameters from those provided to search.

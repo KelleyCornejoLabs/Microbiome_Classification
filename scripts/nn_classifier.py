@@ -38,16 +38,19 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 if device == "cuda":
     print("Using GPU")
 
+losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
+optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
+
 def load_data(train_path, test_path):
     # Load and validate the input data
     try:
-        dftr = pd.read_csv(args.input_train)
+        dftr = pd.read_csv(train_path)
     except FileNotFoundError:
         print("Could not load input training data")
         sys.exit(1)
 
     try:
-        dfte = pd.read_csv(args.input_test)
+        dfte = pd.read_csv(test_path)
     except FileNotFoundError:
         print("Could not load input test data")
         sys.exit(1)
@@ -128,7 +131,7 @@ def load_data(train_path, test_path):
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
 def generate_model(linear, train_features, hidden_features, classes):
-    if linear == False:
+    if not linear:
         print(f"Non-linear {train_features} -> {classes}")
         classifier = nn.Sequential(
             nn.Linear(in_features=train_features, out_features=101),
@@ -161,7 +164,7 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevelance):
+          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path):
 
     def i_to_lbl(i):
         return all_labels[i.argmax()]
@@ -177,11 +180,12 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # NOTE: Use more metrics (see 2.ipynb). Do per-class accuracy? Confudsion matrix!!
     # https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c
-    losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
-    optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
-    loss_fn = losses[args.loss](weight=ordered_prevelence)
-    optim = optims[args.optim](params=classifier.parameters(), lr=lr)
+    if loss_type == "ce":
+        loss_fn = losses[loss_type](weight=ordered_prevalence)
+    else:
+        loss_fn = losses[loss_type]()
+    optim = optims[optim_type](params=classifier.parameters(), lr=lr)
 
     # Tracking
     epoch_count = []
@@ -217,7 +221,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
-                torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
+                torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
                 epoch_count.append(epoch)
                 loss_values.append(loss)
                 test_losses.append(test_loss)
@@ -230,7 +234,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             #     break
 
     # Save model
-    torch.save(obj=classifier.state_dict(), f=args.path+"_nn.pt")
+    torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
 
     # Calculate time
     time_now = time.time()
@@ -241,12 +245,12 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         y_predictions = classifier(X_test)
         accuracy = accuracy_test(y_test, y_predictions)
 
-        with open(args.path+"_metrics.txt", "w") as f:
+        with open(path+"_metrics.txt", "w") as f:
             print(f"Final Accuracy: {accuracy}% in {time_taken}")
             f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
 
-            print(f"Test Config: lr: {lr}, linear: {not (args.linear == 'False')}, loss_fn: {args.loss}, optim: {args.optim}")
-            f.write(f"Final Accuracy: {accuracy}% in {time_taken}. Max acc: {max(test_accuracies)}\n")
+            print(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
+            f.write(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
 
             print(f"{len(epoch_count), len(loss_values), len(test_losses)}")
             for i in range(len(epoch_count)):
@@ -255,6 +259,8 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             f.write("Cases: \n")
             for i in range(10):
                 f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(y_predictions[i])}\n")
+
+        return accuracy
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
@@ -273,7 +279,7 @@ if __name__ == "__main__":
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
     arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
     arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
-    arguments.add_argument("-sd","--seed", help="Don't use ReLU?", default=None)
+    arguments.add_argument("-sd","--seed", help="Seed rng", default=None)
 
     # Parse arguments
     args = parser.parse_args()
@@ -288,7 +294,7 @@ if __name__ == "__main__":
 
         torch.manual_seed(seed)
 
-    linear = args.linear = "True"
+    linear = args.linear == "True"
 
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
     classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
@@ -318,4 +324,4 @@ if __name__ == "__main__":
         sys.exit(3)
 
     train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
-          args.loss, args.optim, linear, all_labels, ordered_prevelence)
+          args.loss, args.optim, linear, all_labels, ordered_prevelence, args.path)
