@@ -1,0 +1,83 @@
+import sys
+import argparse
+import nn_classifier
+
+# Arguments for tool
+parser = argparse.ArgumentParser(description="Trains several neural classifiers to find best hyperparameters")
+
+arguments = parser.add_argument_group("Arguments")
+arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
+arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
+arguments.add_argument("-e", "--epochs", help="Path to test input data as csv", required=True)
+arguments.add_argument("-t", "--tests", help="Path to test input data as csv", default=3)
+arguments.add_argument("-o", "--optims", help="Comma seperated list of optimizers to test", required=True)
+arguments.add_argument("-l", "--losses", help="Comma seperated lsit of losses to test", required=True)
+arguments.add_argument("-lr", "--learning-rates", help="Comma seperated lsit of lrs to test", required=True)
+arguments.add_argument("-nl", "--non-linear", help="Test non-linear", required=False)
+arguments.add_argument("-p", "--path", help="Path to save findings", default="results")
+arguments.add_argument("-pt", "--path-tests", help="Path to Tests", default="tests/results")
+
+args = parser.parse_args()
+
+# Validate arguments
+try:
+    max_epochs = int(args.epochs)
+except TypeError:
+    print("epochs must be int")
+    sys.exit(1)
+
+try:
+    tests = int(args.tests)
+except TypeError:
+    print("tests must be int")
+    sys.exit(1)
+
+optims = args.optims.split(",")
+for optim in optims:
+    if not optim in nn_classifier.optims.keys():
+        print("optim must be from", ' '.join(nn_classifier.optims.keys()))
+        sys.exit(1)
+
+losses = args.losses.split(",")
+for loss in losses:
+    if not loss in nn_classifier.losses.keys():
+        print("loss must be from", ' '.join(nn_classifier.losses.keys()))
+        sys.exit(1)
+
+try:
+    lrs = [float(lr) for lr in args.learning_rates.split(",")]
+except TypeError:
+    print("Each learning rate must be a float")
+    sys.exit(1)
+
+linear = not args.non_linear == "True"
+print(linear)
+
+# Get testing data
+X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = nn_classifier.load_data(args.input_train, args.input_test)
+
+# Try each option
+performaces = {}
+for optim in optims:
+    for loss in losses:
+        for lr in lrs:
+            for test in range(tests):
+                path = f"{args.path_tests}_{optim}_{loss}_{lr}_{test}"
+                model = nn_classifier.generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+                acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
+                                          0.1, loss, optim, linear, all_labels, ordered_prevelence, path)
+                prev = performaces.get(f"{optim}_{loss}_{lr}")
+                performaces[f"{optim}_{loss}_{lr}"] = acc if prev is None or prev < acc else prev
+
+with open(args.path+"_metrics.txt", "w") as f:
+    f.write(f"Linear: {linear}")
+    f.write(f"\nTested: {tests} times")
+    f.write(f"\nLoss functions: {' '.join(losses)}")
+    f.write(f"\nOptimizers: {' '.join(optims)}")
+    f.write(f"\nLearning Rates: {(lrs)}")
+    f.write(f"\nEpochs: {max_epochs}")
+    f.write(f"\nBest performances for each setup: {performaces}")
+    f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
+
+print(performaces)
+print(f"Best performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
