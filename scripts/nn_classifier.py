@@ -74,6 +74,7 @@ def load_data(train_path, test_path):
 
     all_labels = list(set(dftr["HC_subCST"]))
 
+    # Encode and decode labels as one-hot vector corresponding to their index in all_labels
     def i_to_lbl(i):
         return all_labels[i.argmax()]
 
@@ -121,7 +122,9 @@ def load_data(train_path, test_path):
     # Found out what proportion of the data each CST makes
     entries = dftr.groupby(['HC_subCST']).count()['sampleID']
 
-    # TODO: Test this with more metrics. It will affect how the model learns rarer classes
+    # TODO: Test this with more metrics. It will affect how the model learns rarer classes <----
+    # TODO: Try different measures of prevelance. Giving rarer classes such a bigger importance will
+    # impact the accuracy of more common classes a lot
     # Get in order of what index each label is in training data
     ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
     ordered_prevelence *= 1/ordered_prevelence.min()
