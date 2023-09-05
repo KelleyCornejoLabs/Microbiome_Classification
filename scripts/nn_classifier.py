@@ -7,6 +7,7 @@
 
 import sys
 import time
+from pathlib import Path 
 
 try:
     import pandas as pd
@@ -32,6 +33,13 @@ try:
 except:
     print("Required package torch not available")
     exit()
+
+try:
+    from sklearn.metrics import confusion_matrix
+    skl = True
+except:
+    print("Optional package sklearn not available")
+    skl = False
 
 # Set up GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -224,7 +232,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
-                torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
+                torch.save(obj=classifier.state_dict(), f=path/"_nn.pt")
                 epoch_count.append(epoch)
                 loss_values.append(loss)
                 test_losses.append(test_loss)
@@ -237,7 +245,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             #     break
 
     # Save model
-    torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
+    #torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
 
     # Calculate time
     time_now = time.time()
@@ -248,7 +256,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         y_predictions = classifier(X_test)
         accuracy = accuracy_test(y_test, y_predictions)
 
-        with open(path+"_metrics.txt", "w") as f:
+        with open(path/"_metrics.txt", "w") as f:
             print(f"Final Accuracy: {accuracy}% in {time_taken}")
             f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
 
@@ -265,6 +273,33 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
         return accuracy
 
+# Test model, taking various metrics
+def test(model, X_test, y_test):
+    if not skl:
+        print("Scikit Learn required for testing")
+        return
+    
+    # Pepare data
+    def prep_data(data):
+        # Move to CPU and convert from one-hot to scalar
+        prepped = data.cpu()
+        prepped = prepped.argmax(dim=1)
+        return prepped.numpy()
+
+    # Take predictions
+    model.eval()
+    with torch.inference_mode():
+        y_predictions = model(X_test)
+
+    predictions = prep_data(y_predictions)
+    lbls = prep_data(y_test)
+
+    # Take metrics
+    print(f"accuracy: {accuracy_test(y_test, y_predictions)}")
+
+    conf_mat = confusion_matrix(lbls, predictions)
+    print(conf_mat)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
 
@@ -272,11 +307,11 @@ if __name__ == "__main__":
     arguments = parser.add_argument_group("Arguments")
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
-    arguments.add_argument("-p", "--path", help="Path to save neural network", default="classifier")
+    arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
     arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.01)
     arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
     arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
-    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=None)
+    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=True)
     arguments.add_argument("-s","--split", help="What fraction of data should go to training?", default=0.6)
     arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
@@ -296,11 +331,6 @@ if __name__ == "__main__":
             sys.exit(1)
 
         torch.manual_seed(seed)
-
-    linear = args.linear == "True"
-
-    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
-    classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
 
     try:
         lr = float(args.learning_rate)
@@ -326,5 +356,25 @@ if __name__ == "__main__":
         print("accuracy must be int")
         sys.exit(3)
 
-    train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
-          args.loss, args.optim, linear, all_labels, ordered_prevelence, args.path)
+    linear = args.linear == "True"
+    train_model = not args.train == "False"
+
+    path = Path(args.path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
+
+    if train_model:
+        print("Training model")
+
+        classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+        train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
+              args.loss, args.optim, linear, all_labels, ordered_prevelence, path)
+    else:
+        print("Loading model")
+
+        # TODO: Why doesn't loading work?
+        classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+        classifier.load_state_dict(torch.load(path/"_nn.pt"))
+
+    test(classifier, X_test, y_test)
