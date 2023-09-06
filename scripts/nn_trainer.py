@@ -63,7 +63,7 @@ for optim in optims:
         for lr in lrs:
             for test in range(tests):
                 path = f"{args.path_tests}_{optim}_{loss}_{lr}_{test}"
-                model = nn_classifier.generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+                model = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), False)
                 acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
                                           0.1, loss, optim, linear, all_labels, ordered_prevelence, path)
                 prev = performaces.get(f"{optim}_{loss}_{lr}")

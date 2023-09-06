@@ -143,6 +143,7 @@ def load_data(train_path, test_path):
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
 def generate_model(linear, train_features, hidden_features, classes, old):
     if old:
+        # Old architecture is WAY overcomplicated
         if not linear:
             print(f"OLD Non-linear {train_features} -> {classes}")
             classifier = nn.Sequential(
@@ -166,7 +167,7 @@ def generate_model(linear, train_features, hidden_features, classes, old):
             ).to(device)
     else:
         if not linear:
-            print(f"Non-linear {train_features} -> {classes}")
+            print(f"Non-linear {train_features} -> {hidden_features} -> {classes}")
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.ReLU(),
@@ -176,7 +177,7 @@ def generate_model(linear, train_features, hidden_features, classes, old):
                 nn.Softmax(dim=1)
             ).to(device)
         else:
-            print(f"Linear {train_features} -> {classes}")
+            print(f"Linear {train_features} -> {hidden_features} -> {classes}")
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 #nn.Linear(in_features=hidden_features, out_features=hidden_features),
@@ -219,6 +220,9 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         loss_fn = losses[loss_type]()
     optim = optims[optim_type](params=classifier.parameters(), lr=lr)
 
+    if loss_type == "nll":
+        y_train = y_train.argmax(dim=1)
+
     # Tracking
     epoch_count = []
     loss_values = []
@@ -233,6 +237,9 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         y_predictions = classifier(X_train)
 
         # Calculate loss
+        if loss_type == "nll":
+            y_predictions = y_predictions.log_softmax(dim=1)
+
         loss = loss_fn(y_predictions, y_train)
 
         # Backpropagate
@@ -249,7 +256,10 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
             with torch.inference_mode():
                 test_pred = classifier(X_test)
-                test_loss = loss_fn(test_pred, y_test)
+                if loss_type == "nll":
+                    test_loss = loss_fn(test_pred, y_test.argmax(dim=1))
+                else:
+                    test_loss = loss_fn(test_pred, y_test)
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
@@ -318,6 +328,8 @@ def test(model, X_test, y_test):
     # Take metrics
     print(f"accuracy: {accuracy_test(y_test, y_predictions):.2f}%")
 
+    print('  '.join(all_labels))
+
     conf_mat = confusion_matrix(lbls, predictions)
     print(conf_mat)
 
@@ -344,6 +356,8 @@ if __name__ == "__main__":
     arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
     arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
     arguments.add_argument("-sd","--seed", help="Seed rng", default=None)
+    arguments.add_argument("-hl","--hidden-layers", help="Number of hidden layers to use", default="146")
+
 
     # Parse arguments
     args = parser.parse_args()
@@ -382,6 +396,12 @@ if __name__ == "__main__":
         print("accuracy must be int")
         sys.exit(3)
 
+    try: 
+        hidden = int(args.hidden_layers)
+    except TypeError:
+        print("Hidden layers must be int")
+        sys.exit(3)
+
     linear = args.linear == "True"
     train_model = not args.train == "False"
     continue_train = args.continue_train == "True"
@@ -397,18 +417,18 @@ if __name__ == "__main__":
 
         if continue_train:
             print(f"Continuing to train {path + '_nn.pt'}")
-            classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+            classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
             classifier.load_state_dict(torch.load(path + "_nn.pt"))
         else:
             print("Training fresh model")
-            classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+            classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
         
         train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
               args.loss, args.optim, linear, all_labels, ordered_prevelence, path)
     else:
         print("Loading model")
 
-        classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+        classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
         classifier.load_state_dict(torch.load(path + "_nn.pt"))
     
     test(classifier, X_test, y_test)
