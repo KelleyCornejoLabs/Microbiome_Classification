@@ -143,4 +143,3 @@ if __name__ == "__main__":
     predictions = model.predict(X_test)
     print(f"Accuracy: {accuracy_test(y_test, predictions):0.2f}")
     print(f"Conf mat: \n{confusion_matrix(y_test, predictions)}")
-    print(f"{model.feature_importances_}")

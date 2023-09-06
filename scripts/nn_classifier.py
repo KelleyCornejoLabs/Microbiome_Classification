@@ -7,7 +7,6 @@
 
 import sys
 import time
-from pathlib import Path 
 
 try:
     import pandas as pd
@@ -36,6 +35,7 @@ except:
 
 try:
     from sklearn.metrics import confusion_matrix
+    from sklearn.metrics import f1_score
     skl = True
 except:
     print("Optional package sklearn not available")
@@ -80,7 +80,7 @@ def load_data(train_path, test_path):
         print("Training and test set do not contain same CSTs")
         sys.exit(2)
 
-    all_labels = list(set(dftr["HC_subCST"]))
+    all_labels = sorted(list(set(dftr["HC_subCST"])))
 
     # Encode and decode labels as one-hot vector corresponding to their index in all_labels
     def i_to_lbl(i):
@@ -141,28 +141,49 @@ def load_data(train_path, test_path):
 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
-def generate_model(linear, train_features, hidden_features, classes):
-    if not linear:
-        print(f"Non-linear {train_features} -> {classes}")
-        classifier = nn.Sequential(
-            nn.Linear(in_features=train_features, out_features=101),
-            nn.ReLU(),
-            nn.Linear(in_features=101, out_features=51),
-            nn.ReLU(),
-            nn.Linear(in_features=51, out_features=26),
-            nn.ReLU(),
-            nn.Linear(in_features=26, out_features=classes),
-            nn.Softmax(dim=1)
-        ).to(device)
+def generate_model(linear, train_features, hidden_features, classes, old):
+    if old:
+        if not linear:
+            print(f"OLD Non-linear {train_features} -> {classes}")
+            classifier = nn.Sequential(
+                nn.Linear(in_features=train_features, out_features=101),
+                nn.ReLU(),
+                nn.Linear(in_features=101, out_features=51),
+                nn.ReLU(),
+                nn.Linear(in_features=51, out_features=26),
+                nn.ReLU(),
+                nn.Linear(in_features=26, out_features=classes),
+                nn.Softmax(dim=1)
+            ).to(device)
+        else:
+            print(f"OLD Linear {train_features} -> {classes}")
+            classifier = nn.Sequential(
+                nn.Linear(in_features=train_features, out_features=101),
+                nn.Linear(in_features=101, out_features=51),
+                nn.Linear(in_features=51, out_features=26),
+                nn.Linear(in_features=26, out_features=classes),
+                nn.Softmax(dim=1)
+            ).to(device)
     else:
-        print(f"Linear {train_features} -> {classes}")
-        classifier = nn.Sequential(
-            nn.Linear(in_features=train_features, out_features=101),
-            nn.Linear(in_features=101, out_features=51),
-            nn.Linear(in_features=51, out_features=26),
-            nn.Linear(in_features=26, out_features=13),
-            nn.Softmax(dim=1)
-        ).to(device)
+        if not linear:
+            print(f"Non-linear {train_features} -> {classes}")
+            classifier = nn.Sequential(
+                nn.Linear(in_features=train_features, out_features=hidden_features),
+                nn.ReLU(),
+                #nn.Linear(in_features=hidden_features, out_features=hidden_features),
+                #nn.ReLU(),
+                nn.Linear(in_features=hidden_features, out_features=classes),
+                nn.Softmax(dim=1)
+            ).to(device)
+        else:
+            print(f"Linear {train_features} -> {classes}")
+            classifier = nn.Sequential(
+                nn.Linear(in_features=train_features, out_features=hidden_features),
+                #nn.Linear(in_features=hidden_features, out_features=hidden_features),
+                nn.Linear(in_features=hidden_features, out_features=classes),
+                nn.Softmax(dim=1)
+            ).to(device)
+
 
     return classifier
 
@@ -232,7 +253,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
-                torch.save(obj=classifier.state_dict(), f=path/"_nn.pt")
+                torch.save(obj=classifier.state_dict(), f=path + "_nn.pt")
                 epoch_count.append(epoch)
                 loss_values.append(loss)
                 test_losses.append(test_loss)
@@ -256,7 +277,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         y_predictions = classifier(X_test)
         accuracy = accuracy_test(y_test, y_predictions)
 
-        with open(path/"_metrics.txt", "w") as f:
+        with open(path + "_metrics.txt", "w") as f:
             print(f"Final Accuracy: {accuracy}% in {time_taken}")
             f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
 
@@ -295,10 +316,13 @@ def test(model, X_test, y_test):
     lbls = prep_data(y_test)
 
     # Take metrics
-    print(f"accuracy: {accuracy_test(y_test, y_predictions)}")
+    print(f"accuracy: {accuracy_test(y_test, y_predictions):.2f}%")
 
     conf_mat = confusion_matrix(lbls, predictions)
     print(conf_mat)
+
+    f1 = f1_score(lbls, predictions, average="weighted")
+    print(f"F1 (weighted): {f1:.4f}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
@@ -312,6 +336,8 @@ if __name__ == "__main__":
     arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
     arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
     arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=True)
+    arguments.add_argument("-c","--continue-train", help="Should a saved model be trained more?", default=False)
+    arguments.add_argument("-old","--old-arch", help="Should old architecture be used?", default=False)
     arguments.add_argument("-s","--split", help="What fraction of data should go to training?", default=0.6)
     arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
@@ -358,23 +384,31 @@ if __name__ == "__main__":
 
     linear = args.linear == "True"
     train_model = not args.train == "False"
+    continue_train = args.continue_train == "True"
+    old_arch = args.old_arch == "True"
 
-    path = Path(args.path)
-    path.mkdir(parents=True, exist_ok=True)
+    path = args.path
 
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
 
+    # 146: (2/3)*199 + 13
     if train_model:
         print("Training model")
 
-        classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
+        if continue_train:
+            print(f"Continuing to train {path + '_nn.pt'}")
+            classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+            classifier.load_state_dict(torch.load(path + "_nn.pt"))
+        else:
+            print("Training fresh model")
+            classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+        
         train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
               args.loss, args.optim, linear, all_labels, ordered_prevelence, path)
     else:
         print("Loading model")
 
-        # TODO: Why doesn't loading work?
-        classifier = generate_model(linear, len(X_train[0]), 0, len(y_train[0]))
-        classifier.load_state_dict(torch.load(path/"_nn.pt"))
-
+        classifier = generate_model(linear, len(X_train[0]), 146, len(y_train[0]), old_arch)
+        classifier.load_state_dict(torch.load(path + "_nn.pt"))
+    
     test(classifier, X_test, y_test)
