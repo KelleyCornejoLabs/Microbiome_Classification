@@ -130,7 +130,7 @@ def load_data(train_path, test_path):
     # Found out what proportion of the data each CST makes
     entries = dftr.groupby(['HC_subCST']).count()['sampleID']
 
-    # TODO: Test this with more metrics. It will affect how the model learns rarer classes <----
+    # TODO: Test this with more metrics. It will affect how the model learns rarer classes <---- Look more into IV-C4
     # TODO: Try different measures of prevelance. Giving rarer classes such a bigger importance will
     # impact the accuracy of more common classes a lot
     # Get in order of what index each label is in training data
@@ -145,7 +145,8 @@ def generate_model(linear, train_features, hidden_features, classes, old):
     if old:
         # Old architecture is WAY overcomplicated
         if not linear:
-            print(f"OLD Non-linear {train_features} -> {classes}")
+            structure = f"OLD Non-linear {train_features} -> {classes}"
+            print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
                 nn.ReLU(),
@@ -157,7 +158,8 @@ def generate_model(linear, train_features, hidden_features, classes, old):
                 nn.Softmax(dim=1)
             ).to(device)
         else:
-            print(f"OLD Linear {train_features} -> {classes}")
+            structure = f"OLD Linear {train_features} -> {classes}"
+            print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
                 nn.Linear(in_features=101, out_features=51),
@@ -167,7 +169,8 @@ def generate_model(linear, train_features, hidden_features, classes, old):
             ).to(device)
     else:
         if not linear:
-            print(f"Non-linear {train_features} -> {hidden_features} -> {classes}")
+            structure = f"NEW Non-linear {train_features} -> {hidden_features} -> {classes}"
+            print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.ReLU(),
@@ -177,7 +180,8 @@ def generate_model(linear, train_features, hidden_features, classes, old):
                 nn.Softmax(dim=1)
             ).to(device)
         else:
-            print(f"Linear {train_features} -> {hidden_features} -> {classes}")
+            structure = f"NEW Linear {train_features} -> {hidden_features} -> {classes}"
+            print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 #nn.Linear(in_features=hidden_features, out_features=hidden_features),
@@ -185,10 +189,8 @@ def generate_model(linear, train_features, hidden_features, classes, old):
                 nn.Softmax(dim=1)
             ).to(device)
 
-
-    return classifier
-
-# TODO: Test nmodel architectures
+    # Model, structure:str, optimizer (None)
+    return classifier, structure, None
 
 # Define function to find accuracy of model
 def accuracy_test(lbls, predictions):
@@ -197,29 +199,27 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path):
+          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim):
 
     def i_to_lbl(i):
         return all_labels[i.argmax()]
     
     def lbl_to_i(lbl):
         return np.eye(len(all_labels))[all_labels.index(lbl)]
-    
-    # TODO: try argmax before nll loss?
 
     # TODO: Add column for what each sample was assigned in output
 
     # Set up optimizer/loss
 
-    # NOTE: Use more metrics (see 2.ipynb). Do per-class accuracy? Confudsion matrix!!
-    # https://towardsdatascience.com/beyond-accuracy-precision-and-recall-3da06bea9f6c
-
     if loss_type == "ce":
         loss_fn = losses[loss_type](weight=ordered_prevalence)
     else:
         loss_fn = losses[loss_type]()
-    optim = optims[optim_type](params=classifier.parameters(), lr=lr)
 
+    if optim == None:
+        optim = optims[optim_type](params=classifier.parameters(), lr=lr)
+
+    # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
         y_train = y_train.argmax(dim=1)
 
@@ -263,7 +263,10 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
-                torch.save(obj=classifier.state_dict(), f=path + "_nn.pt")
+                torch.save({"model": classifier.state_dict(),
+                            "structue": structure,
+                            "optim_type": optim_type,
+                            "optim": optim.state_dict()}, f=path + "_nn.pt")
                 epoch_count.append(epoch)
                 loss_values.append(loss)
                 test_losses.append(test_loss)
@@ -335,6 +338,43 @@ def test(model, X_test, y_test):
 
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
+
+# Load model at path from the path_nn.pt
+def load_model(path):
+    # Load 'checkpoint'
+    try:
+        checkpoint = torch.load(path + "_nn.pt")
+    except:
+        print(f"Couldn't read s{path}_nn.pt")
+        sys.exit(2)
+
+    # Check architecture type, linearity, and layer sizes
+    structure = checkpoint["structue"].split(" ")
+    
+    old_arch = True if structure[0] == "OLD" else False if structure[0] == "NEW" else None
+    linear = True if structure[1] == "Linear" else False if structure[1] == "Non-linear" else None
+
+    if old_arch == None or linear == None:
+        print(f"Erroneous structure data in {path}_nn.pt; Old: {old_arch}, Linear: {linear}")
+        sys.exit(2)
+
+    try:
+        input_size = int(structure[2])
+        hidden_size = int(structure[4])
+        output_size = int(structure[6])
+    except TypeError:
+        print(f"Erroneous structure data in {path}_nn.pt; layers must be int -> int -> int")
+
+    # Create the classifier and load its state from nn.pt
+    classifier, structure, _ = generate_model(linear, input_size, hidden_size, output_size, old_arch)
+    classifier.load_state_dict(checkpoint["model"])
+
+    # Load optimizer
+    optim = optims[checkpoint["optim_type"]](params=classifier.parameters())
+    optim.load_state_dict(checkpoint["optim"])
+
+    # Model, structure:str, optimizer
+    return classifier, structure, optim
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
@@ -417,18 +457,17 @@ if __name__ == "__main__":
 
         if continue_train:
             print(f"Continuing to train {path + '_nn.pt'}")
-            classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
-            classifier.load_state_dict(torch.load(path + "_nn.pt"))
+
+            classifier, structure, optim = load_model(path)
         else:
             print("Training fresh model")
-            classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
+            classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
         
         train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
-              args.loss, args.optim, linear, all_labels, ordered_prevelence, path)
+              args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, optim)
     else:
         print("Loading model")
 
-        classifier = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
-        classifier.load_state_dict(torch.load(path + "_nn.pt"))
+        classifier, _, _ = load_model(path)
     
     test(classifier, X_test, y_test)
