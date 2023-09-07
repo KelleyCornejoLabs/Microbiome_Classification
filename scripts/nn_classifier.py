@@ -41,6 +41,13 @@ except:
     print("Optional package sklearn not available")
     skl = False
 
+try:
+    import matplotlib.pyplot as plt
+    mpl = True
+except:
+    print("Optional package matplotlib not available")
+    mpl = False
+
 # Set up GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
 if device == "cuda":
@@ -303,6 +310,15 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             f.write("Cases: \n")
             for i in range(10):
                 f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(y_predictions[i])}\n")
+
+        if mpl:
+            prep = lambda x:list(map(lambda y:y.cpu().item(), x))
+
+            plt.plot(epoch_count, prep(loss_values))
+            plt.plot(epoch_count, prep(test_losses))
+            #plt.plot(epoch_count, test_accuracies)
+            plt.legend(["Train Loss", "Test Loss", "Test Accuracy"])
+            plt.savefig(f"{path}_plt")
 
         return accuracy
 
