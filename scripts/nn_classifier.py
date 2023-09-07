@@ -199,7 +199,7 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim):
+          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None):
 
     def i_to_lbl(i):
         return all_labels[i.argmax()]
@@ -297,7 +297,6 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             print(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
             f.write(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
 
-            print(f"{len(epoch_count), len(loss_values), len(test_losses)}")
             for i in range(len(epoch_count)):
                 f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
 
@@ -345,7 +344,7 @@ def load_model(path):
     try:
         checkpoint = torch.load(path + "_nn.pt")
     except:
-        print(f"Couldn't read s{path}_nn.pt")
+        print(f"Couldn't read {path}_nn.pt")
         sys.exit(2)
 
     # Check architecture type, linearity, and layer sizes
@@ -464,7 +463,7 @@ if __name__ == "__main__":
             classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
         
         train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
-              args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, optim)
+              args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, optim=optim)
     else:
         print("Loading model")
 
