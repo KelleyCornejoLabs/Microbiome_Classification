@@ -43,6 +43,8 @@ except:
 
 try:
     import matplotlib.pyplot as plt
+    import matplotlib
+    from matplotlib.widgets import Button
     mpl = True
 except:
     print("Optional package matplotlib not available")
@@ -206,7 +208,7 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None):
+          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None, debug=False):
 
     def i_to_lbl(i):
         return all_labels[i.argmax()]
@@ -225,6 +227,10 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     if optim == None:
         optim = optims[optim_type](params=classifier.parameters(), lr=lr)
+
+    # NOTE: Use a different lr_scheduler for SGD
+    if optim_type != "sgd":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.2, patience=10, verbose=True)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -256,6 +262,10 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         # Gradient Descent
         optim.step()
 
+        # Step lr scheduler
+        if optim_type != "sgd":
+            scheduler.step(loss)
+
         # Take metrics
         if epoch % metrics_interval == 0:
             # Evaluation
@@ -273,6 +283,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                 torch.save({"model": classifier.state_dict(),
                             "structue": structure,
                             "optim_type": optim_type,
+                            "lr": lr,
                             "optim": optim.state_dict()}, f=path + "_nn.pt")
                 epoch_count.append(epoch)
                 loss_values.append(loss)
@@ -321,19 +332,18 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             plt.savefig(f"{path}_plt")
 
         return accuracy
+    
+# Pepare data. Convert from one-hot cuda tensor to scalar np array
+def prep_data(data):
+    prepped = data.cpu()
+    prepped = prepped.argmax(dim=1)
+    return prepped.numpy()
 
 # Test model, taking various metrics
 def test(model, X_test, y_test):
     if not skl:
         print("Scikit Learn required for testing")
         return
-    
-    # Pepare data
-    def prep_data(data):
-        # Move to CPU and convert from one-hot to scalar
-        prepped = data.cpu()
-        prepped = prepped.argmax(dim=1)
-        return prepped.numpy()
 
     # Take predictions
     model.eval()
@@ -353,6 +363,85 @@ def test(model, X_test, y_test):
 
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
+
+# Store all data relating to data visualization and associated callbacks
+class Plotter:
+    feature_1 = 0
+    feature_2 = 0
+
+    def __init__(self, ax, fig, X_test, y_test, colors):
+        self.ax = ax
+        self.fig = fig
+        self.X_test = X_test
+        self.y_test = y_test
+        self.colors = colors
+
+    def update_scatter(self):
+        self.ax.clear()
+        self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
+        self.ax.set_title(f"Features: {self.feature_1}x{self.feature_2}")
+        self.fig.canvas.draw()
+
+    def next_f1(self, event):
+        self.feature_1 += 1
+        self.update_scatter()
+
+    def prev_f1(self, event):
+        self.feature_1 -= 1
+        self.update_scatter()
+
+    def next_f2(self, event):
+        self.feature_2 += 1
+        self.update_scatter()
+
+    def prev_f2(self, event):
+        self.feature_2 -= 1
+        self.update_scatter()
+
+# Plot boundary line of two features
+def plot_correlations(model, X_test, y_test, all_labels):
+    if not plt:
+        print("Matplot required for plot_correlations.")
+        return
+
+    # Get data to explore
+    model.eval()
+    with torch.inference_mode():
+        predictions = model(X_test)
+        predictions = prep_data(predictions)
+
+    classes = len(y_test[0])
+
+    # Make sure its in right format in CPU memory
+    y_test = prep_data(y_test)
+    X_test = X_test.cpu().numpy()
+    
+    # Create subplot instance with buttons
+    fig, ax = plt.subplots(figsize=(7,6))
+    
+    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma) # Track plotting variables
+
+    ax.scatter(X_test[:,plotter.feature_1], X_test[:,plotter.feature_2], c=y_test, cmap=plt.cm.plasma)
+    fig.legend(all_labels)
+
+    plt.subplots_adjust(bottom=0.2)
+    next_f1_ax = plt.axes([0.75, 0.05, 0.15, 0.07])
+    prev_f1_ax = plt.axes([0.58, 0.05, 0.15, 0.07])
+    next_f2_ax = plt.axes([0.41, 0.05, 0.15, 0.07])
+    prev_f2_ax = plt.axes([0.24, 0.05, 0.15, 0.07])
+
+    button_next_f1 = Button(next_f1_ax, "Next feature1", color='green', hovercolor='blue')
+    button_prev_f1 = Button(prev_f1_ax, "Previous featue1", color='green', hovercolor='blue')
+    button_next_f2 = Button(next_f2_ax, "Next feature2", color='green', hovercolor='blue')
+    button_prev_f2 = Button(prev_f2_ax, "Previous feature2", color='green', hovercolor='blue')
+    
+    button_next_f1.on_clicked(plotter.next_f1)
+    button_prev_f1.on_clicked(plotter.prev_f1)
+    button_next_f2.on_clicked(plotter.next_f2)
+    button_prev_f2.on_clicked(plotter.prev_f2)    
+
+    plt.show()
+
 
 # Load model at path from the path_nn.pt
 def load_model(path):
@@ -385,7 +474,7 @@ def load_model(path):
     classifier.load_state_dict(checkpoint["model"])
 
     # Load optimizer
-    optim = optims[checkpoint["optim_type"]](params=classifier.parameters())
+    optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
     optim.load_state_dict(checkpoint["optim"])
 
     # Model, structure:str, optimizer
@@ -412,6 +501,7 @@ if __name__ == "__main__":
     arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
     arguments.add_argument("-sd","--seed", help="Seed rng", default=None)
     arguments.add_argument("-hl","--hidden-layers", help="Number of hidden layers to use", default="146")
+    arguments.add_argument("-dbg","--debug", help="Show verbose debugging and graphs", default="N")
 
 
     # Parse arguments
@@ -462,6 +552,8 @@ if __name__ == "__main__":
     continue_train = args.continue_train == "True"
     old_arch = args.old_arch == "True"
 
+    debug = True if args.debug == "N" else False if args.debug == "Y" else None
+
     path = args.path
 
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
@@ -486,3 +578,4 @@ if __name__ == "__main__":
         classifier, _, _ = load_model(path)
     
     test(classifier, X_test, y_test)
+    plot_correlations(classifier, X_test, y_test, all_labels)
