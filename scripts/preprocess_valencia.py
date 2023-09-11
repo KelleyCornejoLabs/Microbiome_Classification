@@ -26,7 +26,7 @@ except FileNotFoundError:
     print("Invalid path")
 
 
-cols_to_remove = ['Subject_number','HC_CST','HC_subCST','Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim','IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim','IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim']
+cols_to_remove = ['Subject_number','HC_CST', 'HC_subCST','Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim','IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim','IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim']
 for col in cols_to_remove:
     try:
         data = data.drop(columns=[col])
@@ -36,7 +36,7 @@ data = data.rename(columns={'total_reads':'read_count', 'Sample_number_for_SRA':
 
 if args.output != None:
     try:
-        data.to_csv(args.output)
+        data.to_csv(args.output, index=False)
     except FileNotFoundError:
         print("Invalid path")
 else:

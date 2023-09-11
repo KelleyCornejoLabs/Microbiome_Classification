@@ -36,10 +36,15 @@ except FileNotFoundError:
 # For naming consistency with VALENCIA
 data = data.rename(columns={'total_reads':'read_count', 'Sample_number_for_SRA':'sampleID'})
 
-# We don't need VALENCIA's predictions and confidence values
-data = data.drop(columns=['Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim',
-                          'IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim',
-                          'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"])
+# We don't need VALENCIA's predictions and confidence values. Try to drop each column
+for col in ['Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim',
+            'IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim',
+            'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"]:
+    try:
+        data = data.drop(columns=col)
+    except KeyError:
+        continue    # Label wasn't there. Likely preprocessed
+
 
 # Found out what proportion of the data each CST makes
 entries = data.groupby(['HC_subCST']).count()['sampleID']
