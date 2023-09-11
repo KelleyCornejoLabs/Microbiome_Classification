@@ -34,8 +34,7 @@ except:
     exit()
 
 try:
-    from sklearn.metrics import confusion_matrix
-    from sklearn.metrics import f1_score
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score
     skl = True
 except:
     print("Optional package sklearn not available")
@@ -146,7 +145,7 @@ def load_data(train_path, test_path):
     ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
     ordered_prevelence *= 1/ordered_prevelence.min()
 
-    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence
+    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns
 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
@@ -230,7 +229,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # NOTE: Use a different lr_scheduler for SGD
     if optim_type != "sgd":
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.2, patience=10, verbose=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=10, verbose=True)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -279,7 +278,8 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                     test_loss = loss_fn(test_pred, y_test)
                 test_accuracy = accuracy_test(y_test, test_pred)
 
-                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}")
+                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}, lr:{optim.state_dict()['param_groups'][0]['lr']}")
+                
                 torch.save({"model": classifier.state_dict(),
                             "structue": structure,
                             "optim_type": optim_type,
@@ -292,9 +292,10 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
             classifier.train()
 
+            # TODO: Doesnt work for SGD, also accuracy is incorrect term now
             # Stop if accurate enough
-            # if test_loss <= accuracy:
-            #     break
+            if optim.state_dict()['param_groups'][0]['lr'] <= accuracy:
+                break
 
     # Save model
     #torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
@@ -340,7 +341,7 @@ def prep_data(data):
     return prepped.numpy()
 
 # Test model, taking various metrics
-def test(model, X_test, y_test):
+def test(model, X_test, y_test, all_labels):
     if not skl:
         print("Scikit Learn required for testing")
         return
@@ -359,6 +360,9 @@ def test(model, X_test, y_test):
     print('  '.join(all_labels))
 
     conf_mat = confusion_matrix(lbls, predictions)
+    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
+    disp.plot()
+    plt.show()
     print(conf_mat)
 
     f1 = f1_score(lbls, predictions, average="weighted")
@@ -369,17 +373,18 @@ class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, colors):
+    def __init__(self, ax, fig, X_test, y_test, colors, keys):
         self.ax = ax
         self.fig = fig
         self.X_test = X_test
         self.y_test = y_test
         self.colors = colors
+        self.keys = keys
 
     def update_scatter(self):
         self.ax.clear()
         self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
-        self.ax.set_title(f"Features: {self.feature_1}x{self.feature_2}")
+        self.ax.set_title(f"Features: {self.keys[self.feature_1]} x {self.keys[self.feature_2]}")
         self.fig.canvas.draw()
 
     def next_f1(self, event):
@@ -399,7 +404,7 @@ class Plotter:
         self.update_scatter()
 
 # Plot boundary line of two features
-def plot_correlations(model, X_test, y_test, all_labels):
+def plot_correlations(model, X_test, y_test, all_labels, keys):
     if not plt:
         print("Matplot required for plot_correlations.")
         return
@@ -419,10 +424,10 @@ def plot_correlations(model, X_test, y_test, all_labels):
     # Create subplot instance with buttons
     fig, ax = plt.subplots(figsize=(7,6))
     
-    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma) # Track plotting variables
+    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma, keys) # Track plotting variables
 
     ax.scatter(X_test[:,plotter.feature_1], X_test[:,plotter.feature_2], c=y_test, cmap=plt.cm.plasma)
-    fig.legend(all_labels)
+    fig.legend(labels=all_labels)
 
     plt.subplots_adjust(bottom=0.2)
     next_f1_ax = plt.axes([0.75, 0.05, 0.15, 0.07])
@@ -488,7 +493,7 @@ if __name__ == "__main__":
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
-    arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.01)
+    arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.00001)
     arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
     arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
     arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=True)
@@ -536,9 +541,9 @@ if __name__ == "__main__":
         sys.exit(3)
 
     try: 
-        accuracy = int(args.accuracy)
+        accuracy = float(args.accuracy)
     except TypeError:
-        print("accuracy must be int")
+        print("accuracy must be float")
         sys.exit(3)
 
     try: 
@@ -556,7 +561,7 @@ if __name__ == "__main__":
 
     path = args.path
 
-    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = load_data(args.input_train, args.input_test)
+    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
 
     # 146: (2/3)*199 + 13
     if train_model:
@@ -577,5 +582,5 @@ if __name__ == "__main__":
 
         classifier, _, _ = load_model(path)
     
-    test(classifier, X_test, y_test)
-    plot_correlations(classifier, X_test, y_test, all_labels)
+    test(classifier, X_test, y_test, all_labels)
+    plot_correlations(classifier, X_test, y_test, all_labels, keys)
