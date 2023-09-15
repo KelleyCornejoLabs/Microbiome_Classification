@@ -5,7 +5,6 @@
 # Outputs: A file containing parameters for the neural network and predictions for each 
 #          sample in the input data
 
-import sys
 import time
 
 try:
@@ -57,36 +56,39 @@ if device == "cuda":
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
+# Load data from paths to csv test and training data files.
 def load_data(train_path, test_path):
+    """Loads data from supplied (str) paths to csv training and testing data. Returns
+    normalized 'x' input data as a tensor on the device, 'y' output data as one hot tensors
+    corresponding to that classes index in all_labels, a sorted list encoding the order of the classes,
+    ordered_prevelence which is a tensor on the device with adjused prevelences of each class, and 
+    the column names of those containing input data."""
+
     # Load and validate the input data
     try:
         dftr = pd.read_csv(train_path)
     except FileNotFoundError:
         print("Could not load input training data")
-        sys.exit(1)
+        exit()
 
     try:
         dfte = pd.read_csv(test_path)
     except FileNotFoundError:
         print("Could not load input test data")
-        sys.exit(1)
+        exit()
 
     def check_keys(df_keys, in_type):
         if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
             print(f"{in_type} input does not contain sampleID, read_count, or HC_subCST")
-            sys.exit(2)
+            exit()
 
     check_keys(list(dftr.keys()), "Training")
     check_keys(list(dfte.keys()), "Testing")
 
-    # Shuffle data before splitting
-    dftr = dftr.sample(frac=1).reset_index(drop=True)
-    dfte = dfte.sample(frac=1).reset_index(drop=True)
-
     # Create helper functions for formatting CST 'labels' for the neural network
     if set(dftr["HC_subCST"]) != set(dfte["HC_subCST"]):
         print("Training and test set do not contain same CSTs")
-        sys.exit(2)
+        exit()
 
     all_labels = sorted(list(set(dftr["HC_subCST"])))
 
@@ -108,7 +110,7 @@ def load_data(train_path, test_path):
     if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
         print("Training and test set do not contain same count columns, or they are not in the same order")
         print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
-        sys.exit(2)
+        exit()
 
     count_columns = normalized_train_data.columns
 
@@ -149,7 +151,11 @@ def load_data(train_path, test_path):
 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
-def generate_model(linear, train_features, hidden_features, classes, old):
+def generate_model(linear, train_features, hidden_features, classes, old=False):
+    """Generates a fresh model based on model linearity, number of training features, number of 
+    hidden features, and number of output features. Returns the model, a string representation
+    of its structure, and None (for optimizer)"""
+
     if old:
         # Old architecture is WAY overcomplicated
         if not linear:
@@ -200,6 +206,9 @@ def generate_model(linear, train_features, hidden_features, classes, old):
     # Model, structure:str, optimizer (None)
     return classifier, structure, None
 
+    # Model, structure:str, optimizer (None)
+    return classifier, structure, None
+
 # Define function to find accuracy of model
 def accuracy_test(lbls, predictions):
     # Do argmax to get index, so as not to do torch.eq on a 2d array
@@ -207,7 +216,9 @@ def accuracy_test(lbls, predictions):
     return (correct / len(predictions)) * 100
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          accuracy, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None, debug=False):
+          thresh, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None, debug=False):
+    """Train model on given data with given hyperparameters and return max accuracy. Latest version of model may not be 
+    best peforming on testing data, so load the model after training to get it"""
 
     def i_to_lbl(i):
         return all_labels[i.argmax()]
@@ -225,11 +236,14 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         loss_fn = losses[loss_type]()
 
     if optim == None:
-        optim = optims[optim_type](params=classifier.parameters(), lr=lr)
+        if optim_type == "sgd":
+            optim = optims[optim_type](params=classifier.parameters(), lr=lr, momentum=0.9)
+        else:
+            optim = optims[optim_type](params=classifier.parameters(), lr=lr)
 
     # NOTE: Use a different lr_scheduler for SGD
-    if optim_type != "sgd":
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=10, verbose=True)
+    #if optim_type != "sgd":
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=50, verbose=True)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -243,6 +257,9 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # Track time
     start_time = time.time()
+
+    # Only save best model
+    max_acc = 0
 
     for epoch in range(max_epochs):
         # Forward pass
@@ -262,8 +279,8 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
         optim.step()
 
         # Step lr scheduler
-        if optim_type != "sgd":
-            scheduler.step(loss)
+        #if optim_type != "sgd":
+        scheduler.step(loss)
 
         # Take metrics
         if epoch % metrics_interval == 0:
@@ -278,13 +295,18 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                     test_loss = loss_fn(test_pred, y_test)
                 test_accuracy = accuracy_test(y_test, test_pred)
 
-                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, Test: {test_loss}, Acc: {test_accuracy}, lr:{optim.state_dict()['param_groups'][0]['lr']}")
-                
-                torch.save({"model": classifier.state_dict(),
-                            "structue": structure,
-                            "optim_type": optim_type,
-                            "lr": lr,
-                            "optim": optim.state_dict()}, f=path + "_nn.pt")
+                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, ", end='')
+                print(f"Test: {test_loss}, Acc: {test_accuracy}, lr:{optim.state_dict()['param_groups'][0]['lr']}")
+
+                # Save if new best
+                if test_accuracy > max_acc:
+                    max_acc = test_accuracy
+                    torch.save({"model": classifier.state_dict(),
+                                "structue": structure,
+                                "optim_type": optim_type,
+                                "lr": lr,
+                                "optim": optim.state_dict()}, f=path + "_nn.pt")
+                    
                 epoch_count.append(epoch)
                 loss_values.append(loss)
                 test_losses.append(test_loss)
@@ -294,7 +316,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
             # TODO: Doesnt work for SGD, also accuracy is incorrect term now
             # Stop if accurate enough
-            if optim.state_dict()['param_groups'][0]['lr'] <= accuracy:
+            if optim.state_dict()['param_groups'][0]['lr'] <= thresh:
                 break
 
     # Save model
@@ -306,15 +328,13 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # Write metrics
     with torch.inference_mode():
-        y_predictions = classifier(X_test)
-        accuracy = accuracy_test(y_test, y_predictions)
 
         with open(path + "_metrics.txt", "w") as f:
-            print(f"Final Accuracy: {accuracy}% in {time_taken}")
-            f.write(f"Final Accuracy: {accuracy}% in {time_taken}\n")
+            print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
+            f.write(f"Final Max Accuracy: {max_acc}% in {time_taken}\n")
 
-            print(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
-            f.write(f"Test Config: lr: {lr}, linear: {not (linear == 'False')}, loss_fn: {loss_type}, optim: {optim_type}\n")
+            print(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
+            f.write(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
 
             for i in range(len(epoch_count)):
                 f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
@@ -332,7 +352,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             plt.legend(["Train Loss", "Test Loss", "Test Accuracy"])
             plt.savefig(f"{path}_plt")
 
-        return accuracy
+    return max_acc
     
 # Pepare data. Convert from one-hot cuda tensor to scalar np array
 def prep_data(data):
@@ -346,7 +366,7 @@ def test(model, X_test, y_test, all_labels):
         print("Scikit Learn required for testing")
         return
 
-    # Take predictions
+    # Get predictions
     model.eval()
     with torch.inference_mode():
         y_predictions = model(X_test)
@@ -373,20 +393,31 @@ class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, colors, keys):
+    def __init__(self, ax, fig, X_test, y_test, colors, keys, labels):
         self.ax = ax
         self.fig = fig
         self.X_test = X_test
         self.y_test = y_test
         self.colors = colors
         self.keys = keys
+        self.labels = labels
 
+    # Draw fresh scatterplot with the current features
     def update_scatter(self):
         self.ax.clear()
-        self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
+
+        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
+
+        self.fig.legend(s.legend_elements()[0], self.labels,
+                        loc="center right", title="CST")
+        
+        self.ax.set_xlabel(self.keys[self.feature_1])
+        self.ax.set_ylabel(self.keys[self.feature_2])
         self.ax.set_title(f"Features: {self.keys[self.feature_1]} x {self.keys[self.feature_2]}")
+        
         self.fig.canvas.draw()
 
+    # Select feature1/2 to plot and compare
     def next_f1(self, event):
         self.feature_1 += 1
         self.update_scatter()
@@ -421,14 +452,13 @@ def plot_correlations(model, X_test, y_test, all_labels, keys):
     y_test = prep_data(y_test)
     X_test = X_test.cpu().numpy()
     
-    # Create subplot instance with buttons
+    # Create subplot instance
     fig, ax = plt.subplots(figsize=(7,6))
-    
-    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma, keys) # Track plotting variables
 
-    ax.scatter(X_test[:,plotter.feature_1], X_test[:,plotter.feature_2], c=y_test, cmap=plt.cm.plasma)
-    fig.legend(labels=all_labels)
+    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma, keys, all_labels) # Track plotting variables
+    plotter.update_scatter()
 
+    # Add buttons to the subplot
     plt.subplots_adjust(bottom=0.2)
     next_f1_ax = plt.axes([0.75, 0.05, 0.15, 0.07])
     prev_f1_ax = plt.axes([0.58, 0.05, 0.15, 0.07])
@@ -440,6 +470,7 @@ def plot_correlations(model, X_test, y_test, all_labels, keys):
     button_next_f2 = Button(next_f2_ax, "Next feature2", color='green', hovercolor='blue')
     button_prev_f2 = Button(prev_f2_ax, "Previous feature2", color='green', hovercolor='blue')
     
+    # Register click event callbacks to the plotter's handler functions
     button_next_f1.on_clicked(plotter.next_f1)
     button_prev_f1.on_clicked(plotter.prev_f1)
     button_next_f2.on_clicked(plotter.next_f2)
@@ -455,9 +486,9 @@ def load_model(path):
         checkpoint = torch.load(path + "_nn.pt")
     except:
         print(f"Couldn't read {path}_nn.pt")
-        sys.exit(2)
+        exit()
 
-    # Check architecture type, linearity, and layer sizes
+    # Validate architecture type, linearity, and layer sizes
     structure = checkpoint["structue"].split(" ")
     
     old_arch = True if structure[0] == "OLD" else False if structure[0] == "NEW" else None
@@ -465,7 +496,7 @@ def load_model(path):
 
     if old_arch == None or linear == None:
         print(f"Erroneous structure data in {path}_nn.pt; Old: {old_arch}, Linear: {linear}")
-        sys.exit(2)
+        exit()
 
     try:
         input_size = int(structure[2])
@@ -475,14 +506,14 @@ def load_model(path):
         print(f"Erroneous structure data in {path}_nn.pt; layers must be int -> int -> int")
 
     # Create the classifier and load its state from nn.pt
-    classifier, structure, _ = generate_model(linear, input_size, hidden_size, output_size, old_arch)
+    classifier, structure, _ = generate_model(linear, input_size, hidden_size, output_size)
     classifier.load_state_dict(checkpoint["model"])
 
     # Load optimizer
     optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
     optim.load_state_dict(checkpoint["optim"])
 
-    # Model, structure:str, optimizer
+    # Model, structure (str), optimizer
     return classifier, structure, optim
 
 if __name__ == "__main__":
@@ -493,32 +524,30 @@ if __name__ == "__main__":
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
-    arguments.add_argument("-a","--accuracy", help="Train until accuracy is with in this tolerance", default=0.00001)
+    arguments.add_argument("-tlr","--threshhold-lr", help="Train until lr is dropped to this level", default=0.00001)
     arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.001)
     arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
-    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default=True)
-    arguments.add_argument("-c","--continue-train", help="Should a saved model be trained more?", default=False)
-    arguments.add_argument("-old","--old-arch", help="Should old architecture be used?", default=False)
-    arguments.add_argument("-s","--split", help="What fraction of data should go to training?", default=0.6)
+    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default="True")
+    arguments.add_argument("-c","--continue-train", help="Should a saved model be trained more?", default="False")
     arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
-    arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="sgd")
-    arguments.add_argument("-li","--linear", help="Don't use ReLU?", default=False)
+    arguments.add_argument("-o","--optim", help="Optimizer. sgd (default), or adam", default="adam")
+    arguments.add_argument("-li","--linear", help="Don't use ReLU?", default="False")
     arguments.add_argument("-sd","--seed", help="Seed rng", default=None)
-    arguments.add_argument("-hl","--hidden-layers", help="Number of hidden layers to use", default="146")
+    arguments.add_argument("-hl","--hidden-layers", help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
     arguments.add_argument("-dbg","--debug", help="Show verbose debugging and graphs", default="N")
 
 
     # Parse arguments
     args = parser.parse_args()
 
-    # Set seed
+    # Ensure all arguments are correct type
     if args.seed is not None:
         try:
             seed = int(args.seed)
         except TypeError:
             print("Seed must be an int")
-            sys.exit(1)
+            exit()
 
         torch.manual_seed(seed)
 
@@ -526,61 +555,71 @@ if __name__ == "__main__":
         lr = float(args.learning_rate)
     except TypeError:
         print("Learning rate must be float")
-        sys.exit(3)
+        exit()
 
     try: 
         max_epochs = int(args.max_epochs)
     except TypeError:
         print("max epochs must be int")
-        sys.exit(3)
+        exit()
 
     try: 
         metrics_interval = int(args.metrics_interval)
     except TypeError:
         print("metrics interval must be int")
-        sys.exit(3)
+        exit()
 
     try: 
-        accuracy = float(args.accuracy)
+        thresh = float(args.threshhold_lr)
     except TypeError:
         print("accuracy must be float")
-        sys.exit(3)
+        exit()
 
-    try: 
-        hidden = int(args.hidden_layers)
-    except TypeError:
-        print("Hidden layers must be int")
-        sys.exit(3)
-
+    # Parse all boolean arguments using string comparison
     linear = args.linear == "True"
-    train_model = not args.train == "False"
+    train_model = args.train == "True"
     continue_train = args.continue_train == "True"
-    old_arch = args.old_arch == "True"
 
     debug = True if args.debug == "N" else False if args.debug == "Y" else None
 
     path = args.path
 
+    # Load data from supplied path
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
 
-    # 146: (2/3)*199 + 13
+    # Determine hidden layers
+    if args.hidden_layers == None:
+        hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
+        print(hidden)
+    else:
+        try: 
+            hidden = int(args.hidden_layers)
+        except TypeError:
+            print("Hidden layers must be int")
+            exit()
+
+    # Set up model
     if train_model:
-        print("Training model")
-
         if continue_train:
+            # Improve existing model
             print(f"Continuing to train {path + '_nn.pt'}")
-
             classifier, structure, optim = load_model(path)
+
         else:
+            # Train a model from scratch
             print("Training fresh model")
-            classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), old_arch)
+            classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]))
         
-        train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, accuracy, 
+        train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
               args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, optim=optim)
+        
+        # Latest might not be best performer (which is what gets saved)
+        classifier, _, _ = load_model(path)
+        
     else:
         print("Loading model")
-
         classifier, _, _ = load_model(path)
     
+    # Evaluate the model and plot the correlations
     test(classifier, X_test, y_test, all_labels)
     plot_correlations(classifier, X_test, y_test, all_labels, keys)
