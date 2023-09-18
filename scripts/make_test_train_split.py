@@ -27,7 +27,9 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
                 'IV-C0_sim', 'IV-C1_sim', 'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"]):
     
     # Make sure row exists, if not create it
-    if not label_col in data.keys():
+    if label_col == "None":
+        print("Unlabeled data")
+    elif not label_col in data.keys():
         print(f"HC_subCST equivalent '{label_col}' not found. Please use the column containing target values")
         exit(1)
 
@@ -40,6 +42,7 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
     if sample_id_col =="None":
         data['sampleID'] = range(len(data))
     elif not sample_id_col in data.keys():
+        print(data.keys())
         print(f"sampleID equivalent '{sample_id_col}' not found. Use None to fill with range(n)")
         exit(1)
 
@@ -57,10 +60,38 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
     return data
 
 # Split the (formatted) data as requested
-def split(data, split, tolerance):
+def split(data, split, tolerance, labeled):
     # NOTE: HC_subCST may not be an accurate name depending on the application, but it is used because
     # VALENCIA and its formatting were used to standardize testing between it and the 
     # generalized neural classifier.
+
+    # Shuffle data function
+    shuffle = lambda x:x.sample(frac=1).reset_index(drop=True)
+
+    # Reorder columns like VALENCIA TODO: reorder subCST
+    cols = list(data.keys())
+
+    try:
+        cols.remove("sampleID")
+        cols.remove("read_count")
+    except ValueError:
+        print("read_count or sampleID not in data.")
+        exit(1)
+    
+    cols = ["sampleID", "read_count"] + cols
+
+    # Check for duplicates. They don't work in reindex or training
+    duplicates = [x for x in cols if cols.count(x) > 1]
+    if duplicates != None:
+        print(f"Duplicate values found in data: {' '.join(duplicates)}")
+        exit(1)
+
+    data = data.reindex(columns=cols)
+
+    # For unlabeled data no further processing required
+    if not labeled:
+        train_count = round(split / 100)
+        return shuffle(data[:train_count]), shuffle(data[train_count:])
 
     # Found out what proportion of the data each CST makes. 
     entries = data.groupby(["HC_subCST"]).count()['sampleID']
@@ -97,8 +128,8 @@ def split(data, split, tolerance):
         exit(2)
 
     # Shuffle SubCST data
-    train_set = train_set.sample(frac=1).reset_index(drop=True)
-    test_set = test_set.sample(frac=1).reset_index(drop=True)
+    train_set = shuffle(train_set)
+    test_set = shuffle(test_set)
 
     return train_set, test_set
 
@@ -111,6 +142,22 @@ def write(train_set, test_set, path):
 
     train_set.to_csv(train_path, index=False)
     test_set.to_csv(test_path, index=False)
+
+# Transpose the data preserving columns
+def transpose_data(data):
+    # Save first column name, and transpose
+    first_col = data.keys()[0]
+    data = data.T
+
+    # Make new index column and recover first column
+    data['index'] = range(len(data))
+    data[first_col] = list(data.index)
+    data = data.set_index('index')
+    
+    # Give columns correct labels (names were swapped with index) and get rid of col name column
+    data = data.rename(columns={og:new for og,new in zip(list(data.keys()), list(data.iloc[0]))})
+    data = data.drop(index=0, axis=0)
+    return data
 
 if __name__ == "__main__":
     
@@ -152,14 +199,17 @@ if __name__ == "__main__":
     # Default args for nd, rc, sid, lc are all for VALENCIA data set. Different from 'None' argument
     non_data = ['Val_CST', 'Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim', 'IV-A_sim','IV-B_sim',
                 'IV-C0_sim', 'IV-C1_sim', 'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"] \
-                if args.non_data == None else args.non_data
+                if args.non_data == None else args.non_data.split(',')
     read_count_col = 'total_reads' if args.read_counts == None else args.read_counts
     sample_id_col = 'Sample_number_for_SRA' if args.sample_ids == None else args.sample_ids
     label_col = "HC_subCST" if args.label_col == None else args.label_col
+    labeled = args.label_col != "None"
 
     # Load, format, split, and save
     data = load_file(args.input)
-    if transpose: data = data.T
+    if transpose:
+        data = transpose_data(data)
+    print(data.head())
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
-    train_set, test_set = split(data, train_split, tolerance)
+    train_set, test_set = split(data, train_split, tolerance, labeled)
     write(train_set, test_set, args.output)
