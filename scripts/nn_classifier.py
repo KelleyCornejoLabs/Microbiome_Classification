@@ -206,14 +206,41 @@ def generate_model(linear, train_features, hidden_features, classes, old=False):
     # Model, structure:str, optimizer (None)
     return classifier, structure, None
 
-    # Model, structure:str, optimizer (None)
-    return classifier, structure, None
-
 # Define function to find accuracy of model
 def accuracy_test(lbls, predictions):
     # Do argmax to get index, so as not to do torch.eq on a 2d array
     correct = torch.eq(torch.Tensor([lbl.argmax() for lbl in lbls]), torch.Tensor([p.argmax() for p in predictions])).sum().item()
     return (correct / len(predictions)) * 100
+
+# Evaluate feature importance using the model
+def feature_importance(model, data, lbls, features):
+    with torch.inference_mode():
+        test_pred = classifier(data)
+    
+    standard_score = accuracy_test(lbls, test_pred)
+    
+    importances = {feat:0 for feat in features}
+
+    for i,feat in enumerate(features):
+        # Create copy of data so it isnt overwritten
+        data_cpy = data.detach().clone()
+        
+        # Permute selected feature
+        feature = data_cpy[:,i].cpu().numpy()
+        permuted = torch.Tensor(np.random.permutation(feature)).to(device)
+        data_cpy[:,i] = permuted
+
+        # Test accuracy on permuted data
+        with torch.inference_mode():
+            test_pred = classifier(data_cpy)
+
+        permuted_score = accuracy_test(lbls, test_pred)
+
+        # Find difference between scores and save it
+        importances[feat] = standard_score - permuted_score
+
+    sorted_importances = sorted(importances.items(), key=lambda item: abs(item[1]), reverse=True)
+    print(sorted_importances)
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
           thresh, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, optim=None, debug=False):
@@ -293,6 +320,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
                     test_loss = loss_fn(test_pred, y_test.argmax(dim=1))
                 else:
                     test_loss = loss_fn(test_pred, y_test)
+
                 test_accuracy = accuracy_test(y_test, test_pred)
 
                 print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, ", end='')
@@ -541,6 +569,15 @@ if __name__ == "__main__":
     # Parse arguments
     args = parser.parse_args()
 
+    # Parse all boolean arguments using string comparison
+    linear = args.linear == "True"
+    train_model = args.train == "True"
+    continue_train = args.continue_train == "True"
+
+    debug = True if args.debug == "N" else False if args.debug == "Y" else None
+
+    path = args.path
+
     # Ensure all arguments are correct type
     if args.seed is not None:
         try:
@@ -551,38 +588,30 @@ if __name__ == "__main__":
 
         torch.manual_seed(seed)
 
-    try:
-        lr = float(args.learning_rate)
-    except TypeError:
-        print("Learning rate must be float")
-        exit()
+    if train_model:
+        try:
+            lr = float(args.learning_rate)
+        except TypeError:
+            print("Learning rate must be float")
+            exit()
 
-    try: 
-        max_epochs = int(args.max_epochs)
-    except TypeError:
-        print("max epochs must be int")
-        exit()
+        try: 
+            max_epochs = int(args.max_epochs)
+        except TypeError:
+            print("max epochs must be int")
+            exit()
 
-    try: 
-        metrics_interval = int(args.metrics_interval)
-    except TypeError:
-        print("metrics interval must be int")
-        exit()
+        try: 
+            metrics_interval = int(args.metrics_interval)
+        except TypeError:
+            print("metrics interval must be int")
+            exit()
 
-    try: 
-        thresh = float(args.threshhold_lr)
-    except TypeError:
-        print("accuracy must be float")
-        exit()
-
-    # Parse all boolean arguments using string comparison
-    linear = args.linear == "True"
-    train_model = args.train == "True"
-    continue_train = args.continue_train == "True"
-
-    debug = True if args.debug == "N" else False if args.debug == "Y" else None
-
-    path = args.path
+        try: 
+            thresh = float(args.threshhold_lr)
+        except TypeError:
+            print("accuracy must be float")
+            exit()
 
     # Load data from supplied path
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
@@ -621,5 +650,7 @@ if __name__ == "__main__":
         classifier, _, _ = load_model(path)
     
     # Evaluate the model and plot the correlations
-    test(classifier, X_test, y_test, all_labels)
-    plot_correlations(classifier, X_test, y_test, all_labels, keys)
+    #test(classifier, X_test, y_test, all_labels)
+    #plot_correlations(classifier, X_test, y_test, all_labels, keys)
+
+    feature_importance(classifier, X_test, y_test, keys)
