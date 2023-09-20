@@ -25,29 +25,6 @@ def load_file(path):
 def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_number_for_SRA', label_col="HC_subCST", 
                 non_data=['Val_CST', 'Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim', 'IV-A_sim','IV-B_sim',
                 'IV-C0_sim', 'IV-C1_sim', 'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"]):
-    
-    # Make sure row exists, if not create it
-    if label_col == "None":
-        print("Unlabeled data")
-    elif not label_col in data.keys():
-        print(f"HC_subCST equivalent '{label_col}' not found. Please use the column containing target values")
-        exit(1)
-
-    if read_count_col == "None":
-        data['read_count'] = [1 for _ in range(len(data))]
-    elif not read_count_col in data.keys():
-        print(f"read_count equivalent '{read_count_col}' not found. Use None if already normalized")
-        exit(1)
-
-    if sample_id_col =="None":
-        data['sampleID'] = range(len(data))
-    elif not sample_id_col in data.keys():
-        print(data.keys())
-        print(f"sampleID equivalent '{sample_id_col}' not found. Use None to fill with range(n)")
-        exit(1)
-
-    # If corresponding row exists, rename it for valencia/nn_classifier
-    data = data.rename(columns={read_count_col:'read_count', sample_id_col:'sampleID', label_col:'HC_subCST'})
 
     # We don't need random other data that may be in file, ex: VALECIA's prediction values
     for col in non_data:
@@ -56,6 +33,36 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
         except KeyError:
             print(f"Coun't find non-data column '{col}', continuing")
             continue    # Column wasn't there. Likely preprocessed
+    
+    # Can't create this row. If it doesn't exist, must be test data
+    if label_col == "None":
+        print("Unlabeled data")
+    elif not label_col in data.keys():
+        print(f"HC_subCST equivalent '{label_col}' not found. Please use the column containing target values")
+        exit(1)
+
+    # Make sure row exists, if not create it
+    if sample_id_col =="None":
+        # SampleIDs are [0,n-1]
+        data['sampleID'] = range(len(data))
+    elif not sample_id_col in data.keys():
+        print(data.keys())
+        print(f"sampleID equivalent '{sample_id_col}' not found. Use None to fill with range(n)")
+        exit(1)
+
+    if read_count_col == "None":
+        # Sum all count data columns to get total for each row, and add it as a column
+        non_count = [sample_id_col]
+        if label_col != "None": non_count += label_col
+        total = lambda i:sum(map(lambda x:float(x), list(data.drop(non_count, axis=1).iloc[i])))
+        row_totals = [total(row) for row in range(len(data))]
+        data['read_count'] = row_totals
+    elif not read_count_col in data.keys():
+        print(f"read_count equivalent '{read_count_col}' not found. Use None if already normalized")
+        exit(1)
+
+    # If corresponding row exists, rename it for valencia/nn_classifier
+    data = data.rename(columns={read_count_col:'read_count', sample_id_col:'sampleID', label_col:'HC_subCST'})
 
     return data
 
@@ -82,7 +89,7 @@ def split(data, split, tolerance, labeled):
 
     # Check for duplicates. They don't work in reindex or training
     duplicates = [x for x in cols if cols.count(x) > 1]
-    if duplicates != None:
+    if len(duplicates) != 0:
         print(f"Duplicate values found in data: {' '.join(duplicates)}")
         exit(1)
 
@@ -113,7 +120,7 @@ def split(data, split, tolerance, labeled):
         train_set = pd.concat([train_set, subCST_entries[:train_count_by_category[subCST]]])
         test_set = pd.concat([test_set, subCST_entries[train_count_by_category[subCST]:]])
 
-    # Check data
+    # Check data against unsplit data by proportion of each label type
     train_entries = train_set.groupby(['HC_subCST']).count()['sampleID']
     train_total_entries = train_entries.sum()
     train_prevelance = train_entries/train_total_entries
@@ -210,6 +217,12 @@ if __name__ == "__main__":
     if transpose:
         data = transpose_data(data)
     print(data.head())
+
+    # Remove duplicates TODO: Needs work
+    print(list(data.keys()).count("Actinobacteria"))
+    data = data.loc[:,~data.columns.duplicated()].copy()
+    print(list(data.keys()).count("Actinobacteria"))
+    
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
     train_set, test_set = split(data, train_split, tolerance, labeled)
     write(train_set, test_set, args.output)
