@@ -56,7 +56,7 @@ if device == "cuda":
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
-# Load data from paths to csv test and training data files.
+# Load data for training and validation from paths to csv test and training data files
 def load_data(train_path, test_path, drop=None):
     """Loads data from supplied (str) paths to csv training and testing data. Returns
     normalized 'x' input data as a tensor on the device, 'y' output data as one hot tensors
@@ -145,8 +145,8 @@ def load_data(train_path, test_path, drop=None):
         normalized_test_data[column] /= dfte["read_count"]
 
     # Format for neural net
-    training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).to(device).type(torch.float)
-    testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).to(device).type(torch.float)
+    training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
+    testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).type(torch.float).to(device)
 
     # Split training data into the train and test sets  
     print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
@@ -161,8 +161,10 @@ def load_data(train_path, test_path, drop=None):
 
     print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
 
+    print(f"{list(map(i_to_lbl, y_train[:5]))}")
+
     # Found out what proportion of the data each CST makes
-    entries = dftr.groupby(['HC_subCST']).count()['sampleID']
+    entries = dftr.groupby(["HC_subCST"]).count()["sampleID"]
 
     # TODO: Test this with more metrics. It will affect how the model learns rarer classes <---- Look more into IV-C4
     # TODO: Try different measures of prevelance. Giving rarer classes such a bigger importance will
@@ -172,6 +174,40 @@ def load_data(train_path, test_path, drop=None):
     ordered_prevelence *= 1/ordered_prevelence.min()
 
     return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns
+
+# Load unlabeled data for classification by model
+def load_unlabeled(path, drop=None):
+    # Read file
+    try:
+        df = pd.read_csv(path)
+    except FileNotFoundError:
+        print(f"Couldn't find dile at path '{path}'")
+        exit(1)
+
+    # Drop columns if required
+    ignore = False
+    if drop != None:
+        for col in drop:
+            try:
+                df = df.drop(columns=[col])
+            except ValueError:
+                print(f"Failed to drop {col} from training set")
+                if not ignore:
+                    ignore = bool(input("Continue anyways?"))
+                    if ignore: continue
+                    exit()
+
+    # Don't feed ID and read counts to net
+    loaded = df.drop(columns=["sampleID", "read_count"])
+
+    # Normalize
+    count_columns = loaded.columns
+    for column in count_columns:
+        loaded[column] /= df["read_count"]
+
+    # Return as float tensor on device
+    return torch.tensor(loaded[count_columns].to_numpy()).type(torch.float).to(device), count_columns
+    
 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
@@ -267,7 +303,8 @@ def feature_importance(model, data, lbls, features):
     return sorted_importances
 
 def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, 
-          thresh, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, keys, optim=None, debug=False):
+          thresh, loss_type, optim_type, linear, all_labels, ordered_prevalence, path, structure, 
+          keys, optim=None, debug=False, patience=50):
     """Train model on given data with given hyperparameters and return max accuracy. Latest version of model may not be 
     best peforming on testing data, so load the model after training to get it"""
 
@@ -294,7 +331,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # NOTE: Use a different lr_scheduler for SGD
     #if optim_type != "sgd":
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=50, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=patience, verbose=True)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -347,7 +384,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
                 test_accuracy = accuracy_test(y_test, test_pred)
 
-                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, ", end='')
+                print(f"Epoch: {epoch} ({((epoch/max_epochs)*100):.2f}%), Loss: {loss}, ", end="")
                 print(f"Test: {test_loss}, Acc: {test_accuracy}, lr:{optim.state_dict()['param_groups'][0]['lr']}")
 
                 # Save if new best
@@ -369,7 +406,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
             # TODO: Doesnt work for SGD, also accuracy is incorrect term now
             # Stop if accurate enough
-            if optim.state_dict()['param_groups'][0]['lr'] <= thresh:
+            if optim.state_dict()["param_groups"][0]["lr"] <= thresh:
                 break
 
     # Save model
@@ -406,7 +443,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
             plt.savefig(f"{path}_plt")
 
     return max_acc
-    
+
 # Pepare data. Convert from one-hot cuda tensor to scalar np array
 def prep_data(data):
     prepped = data.cpu()
@@ -454,16 +491,19 @@ class Plotter:
         self.colors = colors
         self.keys = keys
         self.labels = labels
+        self.first_time = True
 
     # Draw fresh scatterplot with the current features
     def update_scatter(self):
         self.ax.clear()
 
         s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
-
-        self.fig.legend(s.legend_elements()[0], self.labels,
-                        loc="center right", title="CST")
         
+        if self.first_time:
+            self.fig.legend(s.legend_elements()[0], self.labels,
+                            loc="center right", title="CST")
+            self.first_time = False
+
         self.ax.set_xlabel(self.keys[self.feature_1])
         self.ax.set_ylabel(self.keys[self.feature_2])
         self.ax.set_title(f"Features: {self.keys[self.feature_1]} x {self.keys[self.feature_2]}")
@@ -472,7 +512,9 @@ class Plotter:
 
     # Select feature1/2 to plot and compare
     def next_f1(self, event):
-        self.feature_1 += 1
+        if self.feature_1 < len(self.X_test[0]): self.feature_1 += 1
+        print(len(keys), len(X_test[0]))
+        print(self.feature_1)
         self.update_scatter()
 
     def prev_f1(self, event):
@@ -480,7 +522,7 @@ class Plotter:
         self.update_scatter()
 
     def next_f2(self, event):
-        self.feature_2 += 1
+        if self.feature_2 < len(self.X_test[0]): self.feature_2 += 1
         self.update_scatter()
 
     def prev_f2(self, event):
@@ -518,10 +560,10 @@ def plot_correlations(model, X_test, y_test, all_labels, keys):
     next_f2_ax = plt.axes([0.41, 0.05, 0.15, 0.07])
     prev_f2_ax = plt.axes([0.24, 0.05, 0.15, 0.07])
 
-    button_next_f1 = Button(next_f1_ax, "Next feature1", color='green', hovercolor='blue')
-    button_prev_f1 = Button(prev_f1_ax, "Previous featue1", color='green', hovercolor='blue')
-    button_next_f2 = Button(next_f2_ax, "Next feature2", color='green', hovercolor='blue')
-    button_prev_f2 = Button(prev_f2_ax, "Previous feature2", color='green', hovercolor='blue')
+    button_next_f1 = Button(next_f1_ax, "Next feature1", color="green", hovercolor="blue")
+    button_prev_f1 = Button(prev_f1_ax, "Previous featue1", color="green", hovercolor="blue")
+    button_next_f2 = Button(next_f2_ax, "Next feature2", color="green", hovercolor="blue")
+    button_prev_f2 = Button(prev_f2_ax, "Previous feature2", color="green", hovercolor="blue")
     
     # Register click event callbacks to the plotter's handler functions
     button_next_f1.on_clicked(plotter.next_f1)
@@ -533,7 +575,7 @@ def plot_correlations(model, X_test, y_test, all_labels, keys):
 
 
 # Load model at path from the path_nn.pt
-def load_model(path, keys=None):
+def load_model(path, keys=None, return_features=False):
     # Load 'checkpoint'
     try:
         checkpoint = torch.load(path + "_nn.pt")
@@ -571,11 +613,12 @@ def load_model(path, keys=None):
     optim.load_state_dict(checkpoint["optim"])
 
     # Model, structure (str), optimizer
-    return classifier, structure, optim
+    if return_features: return classifier, structure, optim, checkpoint["features"]
+    else: classifier, structure, optim
 
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path, test_path, sorted_importances, imporatance_threshold, lr, max_epochs, 
-                        metrics_interval, thresh, loss_type, optim_type, linear, path, hidden=None):
+                        metrics_interval, thresh, loss_type, optim_type, linear, path, hidden=None, patience=100):
     
     # Determine columns to cut
     unimportant_cols = [key for key, value in sorted_importances.items() if value < imporatance_threshold]
@@ -594,129 +637,141 @@ def train_simpler_model(train_path, test_path, sorted_importances, imporatance_t
     Sclassifier, Sstructure, Soptim = generate_model(linear, len(SX_train[0]), hidden, len(Sy_train[0]))
         
     train(Sclassifier, SX_train, Sy_train, SX_test, Sy_test, lr, max_epochs, metrics_interval, thresh, 
-          loss_type, optim_type, linear, Sall_labels, Sordered_prevelence, f"{path}_simplified", Sstructure, Skeys)
+          loss_type, optim_type, linear, Sall_labels, Sordered_prevelence, f"{path}_simplified", Sstructure, 
+          Skeys, patience=patience)
     
     # Latest might not be best performer (which is what gets saved)
     Sclassifier, _, _ = load_model(f"{path}_simplified")
     return Sclassifier, SX_test, Sy_test, Sall_labels
+
+# Return all the columns requested from data in order
+def get_cols(data, columns, data_features, strict=False):
+    # For loose equality, standardize strings
+    standardize = lambda x:list(map(lambda y:y.lower().replace(' ','_'), x))
+    if not strict:
+        columns = standardize(columns)
+        data_features = standardize(data_features)
+
+    #print(list(columns), list(data_features))
+    for col in columns:
+        print(col, col in data_features)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trains or uses a neural network classifier on microbiome count data")
 
     # Arguments for tool
     arguments = parser.add_argument_group("Arguments")
-    arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
+    arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", default=None)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
-    arguments.add_argument("-tlr","--threshhold-lr", help="Train until lr is dropped to this level", default=0.00001)
-    arguments.add_argument("-lr","--learning-rate", help="Learning rate for ai", default=0.01)
-    arguments.add_argument("-me","--max-epochs", help="Maximum number of epochs to train for. None is default", default=None)
-    arguments.add_argument("-t","--train", help="Should a model be trained based on input data?", default="True")
-    arguments.add_argument("-c","--continue-train", help="Should a saved model be trained more?", default="False")
-    arguments.add_argument("-m","--metrics-interval", help="How many epochs should training metrics be taken?", default=50)
+    arguments.add_argument("-tlr","--threshhold-lr", type=float, help="Train until lr is dropped to this level", default=0.00001)
+    arguments.add_argument("-lr","--learning-rate", type=float, help="Learning rate for ai", default=0.01)
+    arguments.add_argument("-me","--max-epochs", type=int, help="Maximum number of epochs to train for. None is default", default=None)
+    arguments.add_argument("-t","--train", action=argparse.BooleanOptionalAction, help="Should a model be trained based on input data?", default=True)
+    arguments.add_argument("-c","--continue-train", action=argparse.BooleanOptionalAction, help="Should a saved model be trained more?", default=False)
+    arguments.add_argument("-m","--metrics-interval", type=int, help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
     arguments.add_argument("-o","--optim", help="Optimizer. sgd, or adam (default)", default="adam")
-    arguments.add_argument("-li","--linear", help="Don't use ReLU?", default="False")
-    arguments.add_argument("-sd","--seed", help="Seed rng", default=None)
-    arguments.add_argument("-hl","--hidden-layers", help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
-    arguments.add_argument("-dbg","--debug", help="Show verbose debugging and graphs", default="N")
+    arguments.add_argument("-li","--linear", action=argparse.BooleanOptionalAction, help="Don't use ReLU?", default=False)
+    arguments.add_argument("-pa","--patience", type=int, help="How many stagnant epochs to wait to cut lr?", default=100)
+    arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
+    arguments.add_argument("-hl","--hidden-layers", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
+    arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=False)
+    arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on signigicant parameters", default=False)
+    arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
 
 
     # Parse arguments
     args = parser.parse_args()
 
-    # Parse all boolean arguments using string comparison
-    linear = args.linear == "True"
-    train_model = args.train == "True"
-    continue_train = args.continue_train == "True"
+    # Set args to corresponding variables and preprosses if necessary
+    linear = args.linear
+    train_model = args.train
+    continue_train = args.continue_train
 
-    debug = True if args.debug == "N" else False if args.debug == "Y" else None
+    debug = args.debug
 
     path = args.path
 
-    # Ensure all arguments are correct type
     if args.seed is not None:
-        try:
-            seed = int(args.seed)
-        except TypeError:
-            print("Seed must be an int")
-            exit()
+        torch.manual_seed(args.seed)
 
-        torch.manual_seed(seed)
+    lr = args.learning_rate
 
-    try:
-        lr = float(args.learning_rate)
-    except TypeError:
-        if train_model:
-            print("Learning rate must be float")
-            exit()
+    max_epochs = args.max_epochs
 
-    try: 
-        max_epochs = int(args.max_epochs)
-    except TypeError:
-        if train_model:
-            print("max epochs must be int")
-            exit()
+    metrics_interval = args.metrics_interval
 
-    try: 
-        metrics_interval = int(args.metrics_interval)
-    except TypeError:
-        if train_model:
-            print("metrics interval must be int")
-            exit()
+    thresh = args.threshhold_lr
 
-    try: 
-        thresh = float(args.threshhold_lr)
-    except TypeError:
-        if train_model:
-            print("accuracy must be float")
-            exit()
+    train_simple = args.train_simple
 
-    # Load data from supplied path
-    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
+    classify = args.classify
+    if classify: train_model = False
 
-    # Determine hidden layers
-    if args.hidden_layers == None:
-        hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
-        print(hidden)
-    else:
-        try: 
-            hidden = int(args.hidden_layers)
-        except TypeError:
-            print("Hidden layers must be int")
-            exit()
-
-    # Set up model
     if train_model:
-        if continue_train:
-            # Improve existing model
-            print(f"Continuing to train {path + '_nn.pt'}")
-            classifier, structure, optim = load_model(path)
+        if args.input_train == None:
+            print("Input Train required for training")
+            exit(1)
+
+        # Load data from supplied path
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
+
+        # Determine hidden layers
+        if args.hidden_layers == None:
+            hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
+            print(hidden)
+        else:
+            hidden = args.hidden_layers
+
+        # Set up model
+        if train_model:
+            if continue_train:
+                # Improve existing model
+                print(f"Continuing to train {path + '_nn.pt'}")
+                classifier, structure, optim = load_model(path)
+
+            else:
+                # Train a model from scratch
+                print("Training fresh model")
+                classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]))
+
+            train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
+                  args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, optim=optim, patience=args.patience)
+
+            # Latest might not be best performer (which is what gets saved)
+            classifier, _, _ = load_model(path)
 
         else:
-            # Train a model from scratch
-            print("Training fresh model")
-            classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]))
-        
-        train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
-              args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, optim=optim)
-        
-        # Latest might not be best performer (which is what gets saved)
-        classifier, _, _ = load_model(path)
-        
-    else:
-        print("Loading model")
-        classifier, _, _ = load_model(path)
-    
-    # Evaluate the model and plot the correlations
-    #test(classifier, X_test, y_test, all_labels)
-    #plot_correlations(classifier, X_test, y_test, all_labels, keys)
+            print("Loading model")
+            classifier, _, _ = load_model(path)
 
-    sorted_importances = feature_importance(classifier, X_test, y_test, keys)
+        # Evaluate the model and plot the correlations
+        test(classifier, X_test, y_test, all_labels)
+        plot_correlations(classifier, X_test, y_test, all_labels, keys)
 
-    Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
-                                                                         sorted_importances, 1, lr, max_epochs, 
-                                                                         metrics_interval, thresh, args.loss, 
-                                                                         args.optim, linear, path)
+        if train_simple:
+            print("Training simplified")
+            # Find the sorted imporrtances of each feature, then train and test a network on the importnant features
+            sorted_importances = feature_importance(classifier, X_test, y_test, keys)
+
+            Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
+                                                                                 sorted_importances, 1, lr, max_epochs, 
+                                                                                 metrics_interval, thresh, args.loss, 
+                                                                                 args.optim, linear, path, patience=args.patience)
+
+            test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
+            plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
+
+    elif classify:
+        data, data_features = load_unlabeled(args.input_test)
+
+        classifier, _, _, features = load_model(path, return_features=True)
+
+        d = {'g_streptococcus':"streptococcus_gallolyticus", "g_fastidiosipila":"", "g_bifidobacterium":""}
+
+        data = get_cols(data, list(features), list(data_features))
     
-    test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
+
+
+        #print(list(features), list(data_features))
