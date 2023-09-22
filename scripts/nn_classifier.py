@@ -418,7 +418,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
     # Write metrics
     with torch.inference_mode():
-
+        test_pred = classifier(X_test)
         with open(path + "_metrics.txt", "w") as f:
             print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
             f.write(f"Final Max Accuracy: {max_acc}% in {time_taken}\n")
@@ -431,7 +431,7 @@ def train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_
 
             f.write("Cases: \n")
             for i in range(10):
-                f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(y_predictions[i])}\n")
+                f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(test_pred[i])}\n")
 
         if mpl:
             prep = lambda x:list(map(lambda y:y.cpu().item(), x))
@@ -512,21 +512,19 @@ class Plotter:
 
     # Select feature1/2 to plot and compare
     def next_f1(self, event):
-        if self.feature_1 < len(self.X_test[0]): self.feature_1 += 1
-        print(len(keys), len(X_test[0]))
-        print(self.feature_1)
+        if self.feature_1 < len(self.X_test[0]) - 1: self.feature_1 += 1
         self.update_scatter()
 
     def prev_f1(self, event):
-        self.feature_1 -= 1
+        if self.feature_1 > -len(self.X_test[0]): self.feature_1 -= 1
         self.update_scatter()
 
     def next_f2(self, event):
-        if self.feature_2 < len(self.X_test[0]): self.feature_2 += 1
+        if self.feature_2 < len(self.X_test[0]) - 1: self.feature_2 += 1
         self.update_scatter()
 
     def prev_f2(self, event):
-        self.feature_2 -= 1
+        if self.feature_2 > -len(self.X_test[0]): self.feature_2 -= 1
         self.update_scatter()
 
 # Plot boundary line of two features
@@ -599,6 +597,7 @@ def load_model(path, keys=None, return_features=False):
         output_size = int(structure[6])
     except TypeError:
         print(f"Erroneous structure data in {path}_nn.pt; layers must be int -> int -> int")
+        exit(1)
 
     if keys != None and set(keys) != set(checkpoint["features"]):
         print(f"Features used in model and features provided do not match.")
@@ -612,13 +611,14 @@ def load_model(path, keys=None, return_features=False):
     optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
     optim.load_state_dict(checkpoint["optim"])
 
-    # Model, structure (str), optimizer
+    # Model, structure (str), optimizer, features (optional)
     if return_features: return classifier, structure, optim, checkpoint["features"]
-    else: classifier, structure, optim
+    else: return classifier, structure, optim
 
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path, test_path, sorted_importances, imporatance_threshold, lr, max_epochs, 
-                        metrics_interval, thresh, loss_type, optim_type, linear, path, hidden=None, patience=100):
+                        metrics_interval, thresh, loss_type, optim_type, linear, path, hidden=None, 
+                        patience=100, models=1):
     
     # Determine columns to cut
     unimportant_cols = [key for key, value in sorted_importances.items() if value < imporatance_threshold]
@@ -633,15 +633,21 @@ def train_simpler_model(train_path, test_path, sorted_importances, imporatance_t
         # Hidden layers shouldn't be bigger than classes or outputs. If it is, pick bigger of two
         hidden = max(min(hidden, round(len(SX_train[0]))), round(len(Sy_train[0])))
 
-    # Simplified classifier creation and training
-    Sclassifier, Sstructure, Soptim = generate_model(linear, len(SX_train[0]), hidden, len(Sy_train[0]))
+    accuracies = []
+    for i in range(models):
+        # Simplified classifier creation and training
+        Sclassifier, Sstructure, Soptim = generate_model(linear, len(SX_train[0]), hidden, len(Sy_train[0]))
+
+        acc = train(Sclassifier, SX_train, Sy_train, SX_test, Sy_test, lr, max_epochs, metrics_interval, thresh, 
+              loss_type, optim_type, linear, Sall_labels, Sordered_prevelence, f"{path}_simplified_{i}", Sstructure, 
+              Skeys, patience=patience)
         
-    train(Sclassifier, SX_train, Sy_train, SX_test, Sy_test, lr, max_epochs, metrics_interval, thresh, 
-          loss_type, optim_type, linear, Sall_labels, Sordered_prevelence, f"{path}_simplified", Sstructure, 
-          Skeys, patience=patience)
+        accuracies.append(acc)
     
+    best_model_index = accuracies.index(max(accuracies))
+
     # Latest might not be best performer (which is what gets saved)
-    Sclassifier, _, _ = load_model(f"{path}_simplified")
+    Sclassifier, _, _ = load_model(f"{path}_simplified_{best_model_index}")
     return Sclassifier, SX_test, Sy_test, Sall_labels
 
 # Return all the columns requested from data in order
@@ -679,6 +685,7 @@ if __name__ == "__main__":
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=False)
     arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on signigicant parameters", default=False)
     arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
+    arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)
 
 
     # Parse arguments
@@ -730,14 +737,26 @@ if __name__ == "__main__":
                 # Improve existing model
                 print(f"Continuing to train {path + '_nn.pt'}")
                 classifier, structure, optim = load_model(path)
+                train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
+                      args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, 
+                      optim=optim, patience=args.patience)
 
             else:
                 # Train a model from scratch
                 print("Training fresh model")
-                classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]))
 
-            train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
-                  args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, optim=optim, patience=args.patience)
+                accuracies = []
+                for i in range(args.train_multiple):
+                    classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]))
+
+                    acc = train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
+                                args.loss, args.optim, linear, all_labels, ordered_prevelence, f"{path}_{i}", structure, keys, 
+                                optim=optim, patience=args.patience)
+                    
+                    accuracies.append(acc)
+                
+                best_model = accuracies.index(max(accuracies))
+                path += f"_{best_model}"
 
             # Latest might not be best performer (which is what gets saved)
             classifier, _, _ = load_model(path)
@@ -758,7 +777,8 @@ if __name__ == "__main__":
             Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
                                                                                  sorted_importances, 1, lr, max_epochs, 
                                                                                  metrics_interval, thresh, args.loss, 
-                                                                                 args.optim, linear, path, patience=args.patience)
+                                                                                 args.optim, linear, path, patience=args.patience, 
+                                                                                 models = args.train_multiple)
 
             test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
             plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
@@ -772,6 +792,6 @@ if __name__ == "__main__":
 
         data = get_cols(data, list(features), list(data_features))
     
-
+        # TODO: Add model predictions to the file
 
         #print(list(features), list(data_features))
