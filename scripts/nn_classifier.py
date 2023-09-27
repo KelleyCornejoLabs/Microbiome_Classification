@@ -6,6 +6,7 @@
 #          sample in the input data
 
 import time
+import os
 
 try:
     import pandas as pd
@@ -432,7 +433,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
     # Save model
     #torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
-
+    
     # Calculate time
     time_now = time.time()
     time_taken = f"{int((time_now - start_time) / 3600)}:{int(((time_now - start_time) / 60) % 60)}:{int((time_now - start_time) % 60)}"
@@ -453,7 +454,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
             f.write("Cases: \n")
             for i in range(10):
                 f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(test_pred[i])}\n")
-
+        
         # If matplot imported, save graph
         if mpl:
             prep = lambda x:list(map(lambda y:y.cpu().item(), x))
@@ -605,6 +606,7 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
 # Load model at path from the path_nn.pt
 def load_model(path: str, keys: None|list[str] = None, return_features: bool = False) -> \
     tuple[nn.Sequential, str, torch.optim.Optimizer, list[str]|None]:
+
     # Load 'checkpoint'
     try:
         checkpoint = torch.load(path + "_nn.pt")
@@ -657,7 +659,8 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
     unimportant_cols = [key for key, value in sorted_importances.items() if value < imporatance_threshold]
 
     # Determine new data containing the Significant columns
-    SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, drop=unimportant_cols)
+    SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
+                                                                                              drop=unimportant_cols)
     print(f"Training simpler model on columns: {','.join(list(Skeys))}")
 
     if hidden == None:
@@ -677,12 +680,29 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
               Skeys, patience=patience)
         
         accuracies.append(acc)
-    
+
+    # Get rid of the worse models
     best_model_index = accuracies.index(max(accuracies))
+    rename_best(f"{path}_simplified", best_model_index, models)
 
     # Latest might not be best performer (which is what gets saved)
-    Sclassifier, _, _ = load_model(f"{path}_simplified_{best_model_index}")
+    Sclassifier, _, _ = load_model(f"{path}_simplified")
     return Sclassifier, SX_test, Sy_test, Sall_labels
+
+# Rename the best performing model to be generic, and get rid of the rest
+def rename_best (path: str, best: int, models: int):
+    os.rename(f"{path}_{best}_metrics.txt", f"{path}_metrics.txt")
+    os.rename(f"{path}_{best}_nn.pt", f"{path}_nn.pt")
+    os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
+
+    # Remove other models, skipping best
+    for i in range(models):
+        if i == best:
+            continue
+
+        os.remove(f"{path}_{i}_metrics.txt")
+        os.remove(f"{path}_{i}_nn.pt")
+        os.remove(f"{path}_{i}_plt.png")
 
 # Return all the columns requested from data in order
 # TODO
@@ -707,7 +727,7 @@ if __name__ == "__main__":
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
     arguments.add_argument("-tlr","--threshhold-lr", type=float, help="Train until lr is dropped to this level", default=0.00001)
     arguments.add_argument("-lr","--learning-rate", type=float, help="Learning rate for ai", default=0.01)
-    arguments.add_argument("-me","--max-epochs", type=int, help="Maximum number of epochs to train for. None is default", default=None)
+    arguments.add_argument("-me","--max-epochs", type=int, help="Maximum number of epochs to train for. 50000 is default", default=50000)
     arguments.add_argument("-t","--train", action=argparse.BooleanOptionalAction, help="Should a model be trained based on input data?", default=True)
     arguments.add_argument("-c","--continue-train", action=argparse.BooleanOptionalAction, help="Should a saved model be trained more?", default=False)
     arguments.add_argument("-m","--metrics-interval", type=int, help="How many epochs should training metrics be taken?", default=50)
@@ -792,9 +812,9 @@ if __name__ == "__main__":
                             optim=optim, patience=args.patience)
                 
                 accuracies.append(acc)
-            
+
             best_model = accuracies.index(max(accuracies))
-            path += f"_{best_model}"
+            rename_best(path, best_model, args.train_multiple)
             
         # Latest might not be best performer (which is what gets saved)
         classifier, _, _ = load_model(path)
@@ -838,7 +858,8 @@ if __name__ == "__main__":
         classifier, _, _, features = load_model(path, return_features=True)
 
         print(features)
-        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test, keep=features)
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
+                        load_data(args.input_train, args.input_test, keep=features)
 
         test(classifier, X_test, y_test, all_labels)
         plot_correlations(classifier, X_test, y_test, all_labels, keys)
