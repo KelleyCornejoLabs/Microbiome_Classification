@@ -40,5 +40,5 @@ if args.output != None:
     except FileNotFoundError:
         print("Invalid path")
 else:
-    data.to_csv("output.csv", index=False)
+    data.to_csv(args.output + "output.csv", index=False)
 

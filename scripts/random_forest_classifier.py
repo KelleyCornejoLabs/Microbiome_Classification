@@ -135,6 +135,7 @@ if __name__ == "__main__":
     # Parse arguments
     args = parser.parse_args()
 
+    # Load all data an convert it to numpy for sklearn
     X_train, y_train, X_test, y_test, all_labels, _, _ = nn_classifier.load_data(args.input_train, args.input_test)
 
     X_train = X_train.cpu().numpy()
@@ -143,19 +144,18 @@ if __name__ == "__main__":
     y_train = y_train.argmax(dim=1).cpu().numpy()
     y_test = y_test.argmax(dim=1).cpu().numpy()
 
-    # TODO: get clas weight working
     # Maybe have more estimators that look at a smaller set of features? To try and find several linear differences instead of looking so broadly?
+    # Train model
     model = RandomForestClassifier(n_estimators=100, max_features="sqrt")
     model.fit(X_train, y_train)
 
+    # Test accuracy
     predictions = model.predict(X_test)
-
     incorrect = [':'.join([all_labels[i], all_labels[j]]) for i,j in zip(y_test, predictions) if i != j]
-
-    print(len(incorrect), ', '.join(incorrect))
-
+    print(len(incorrect))
     print(f"Accuracy: {accuracy_test(y_test, predictions)}")
 
+    # Test confusion
     conf_mat = confusion_matrix(y_test, predictions)
     disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
     disp.plot()

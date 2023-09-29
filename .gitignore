@@ -163,3 +163,6 @@ scripts/nn_training_train.csv
 scripts/nn_training_test.csv
 
 models/
+data/
+
+scripts/__pycache__/
