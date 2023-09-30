@@ -288,6 +288,31 @@ def accuracy_test(lbls: torch.Tensor, predictions: torch.Tensor) -> float:
     correct = torch.eq(torch.Tensor([lbl.argmax() for lbl in lbls]), torch.Tensor([p.argmax() for p in predictions])).sum().item()
     return (correct / len(predictions)) * 100
 
+# Returns a list of how many times model's first guess was right, second guess, ...
+def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor) -> list[float]:
+    """Takes a model, data, and labels for the data and returns a list of how many times the choice
+        at that index was correct. [times_choice_1_was_correct, times_choice_2_was_correct, ...]"""
+    
+    # Make predictions
+    model.eval()
+    with torch.inference_mode():
+        predictions = model(data)
+
+    # Make predictions list of lists, and convert lbls from one-hot tensors
+    predictions = list(predictions.cpu().numpy())
+    predictions = list(map(lambda x:list(x), predictions))
+    lbls = list(lbls.argmax(dim=1).cpu().numpy())
+
+    # Find how accuracies for each guess
+    accuracies = []
+    for i in range(len(predictions[0])):
+        # Find which class was the model's ith choice (1st choice, 2nd choice...)
+        ith_choice = list(map(lambda x:x.index(sorted(x, reverse=True)[i]), predictions))
+        # Append the number of times it was correct
+        accuracies.append([ith_choice[j] == lbls[j] for j in range(len(ith_choice))].count(True))
+
+    return accuracies
+
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
                        features: list[str]) -> dict[str, float]:
@@ -725,10 +750,6 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
     with torch.inference_mode():
         y_predictions = model(data)
 
-    # TODO: Get seond predictions and probabilities
-    #a = lambda x:all_labels[list(x).index(sorted(list(x), reverse=True)[1])]
-    #second = list(map(a, y_predictions.cpu().numpy()))
-
     # Get predictions for each sample, and probabilties for each class
     predictions = prep_data(y_predictions)
     predictions = list(map(lambda x:all_labels[x], predictions))
@@ -912,6 +933,8 @@ if __name__ == "__main__":
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
         plot_correlations(classifier, X_test, y_test, all_labels, keys)
+
+        print(top_n_accuracy(classifier, X_train, y_train))
 
     elif info:
         # Load model and print info
