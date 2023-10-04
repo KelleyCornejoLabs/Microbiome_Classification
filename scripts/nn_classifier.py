@@ -178,7 +178,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
 
     print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
 
-    print(f"{list(map(i_to_lbl, y_train[:5]))}")
+    print(f"First 5 labels of train: {', '.join(map(i_to_lbl, y_train[:5]))}")
 
     # Found out what proportion of the data each CST makes
     entries = dftr.groupby(["HC_subCST"]).count()["sampleID"]
@@ -316,6 +316,9 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
                        features: list[str]) -> dict[str, float]:
+
+    # NOTE: works well for increasing accuracy, but not so well for less common classes
+    # Should weight less frequent classes more heavily
 
     with torch.inference_mode():
         test_predictions = model(data)
@@ -680,8 +683,8 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
 def train_simpler_model(train_path: str, test_path: str, sorted_importances: dict[str, float], 
                         imporatance_threshold: float, lr: float, max_epochs: int, metrics_interval: int, 
                         thresh: float, loss_type: str, optim_type: str, linear: bool, path: str, 
-                        focus: list[str], hidden: None|int = None, patience: int = 100, models: int =1) -> \
-                        tuple[nn.Sequential, torch.Tensor, torch.Tensor, list[str]]:
+                        focus: list[str], debug: bool = False, hidden: None|int = None, patience: int = 100, 
+                        models: int =1) -> tuple[nn.Sequential, torch.Tensor, torch.Tensor, list[str]]:
     
     # Determine columns to cut
     if focus == None:
@@ -711,7 +714,7 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
 
         acc = train(Sclassifier, SX_train, Sy_train, SX_test, Sy_test, lr, max_epochs, metrics_interval, thresh, 
               loss_type, optim_type, linear, Sall_labels, Sordered_prevelence, f"{path}_simplified_{i}", Sstructure, 
-              Skeys, patience=patience)
+              Skeys, patience=patience, debug=debug)
         
         accuracies.append(acc)
 
@@ -864,7 +867,7 @@ if __name__ == "__main__":
             classifier, structure, optim = load_model(path)
             train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                   args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, 
-                  optim=optim, patience=args.patience)
+                  optim=optim, patience=args.patience, debug=debug)
             
         else:
             # Train a model from scratch
@@ -874,7 +877,7 @@ if __name__ == "__main__":
                 classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), debug)
                 acc = train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                             args.loss, args.optim, linear, all_labels, ordered_prevelence, f"{path}_{i}", structure, keys, 
-                            optim=optim, patience=args.patience)
+                            optim=optim, patience=args.patience, debug=debug)
                 
                 accuracies.append(acc)
 
@@ -899,7 +902,7 @@ if __name__ == "__main__":
                                                                                  sorted_importances, 1, lr, max_epochs, 
                                                                                  metrics_interval, thresh, args.loss, 
                                                                                  args.optim, linear, path, simple_cols,
-                                                                                 patience=args.patience, 
+                                                                                 patience=args.patience, debug=debug,
                                                                                  models = args.train_multiple)
 
             # Evaluate model and plot correlations
@@ -922,11 +925,11 @@ if __name__ == "__main__":
         classify_data(classifier, args.input_test, args.output, all_labels)
 
     elif test_accuracy:
-        # Load data from supplied path
+        # Load model and data from supplied path
         if debug: print("Loading model")
         classifier, _, _, features, _ = load_model(path, return_features=True)
 
-        print(features)
+        #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
                         load_data(args.input_train, args.input_test, keep=features)
 
@@ -934,6 +937,7 @@ if __name__ == "__main__":
         test(classifier, X_test, y_test, all_labels)
         plot_correlations(classifier, X_test, y_test, all_labels, keys)
 
+        print("Correct guesses\n1st guess, 2nd guess, ...")
         print(top_n_accuracy(classifier, X_train, y_train))
 
     elif info:
