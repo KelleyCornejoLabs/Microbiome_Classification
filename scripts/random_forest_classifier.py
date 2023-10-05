@@ -131,6 +131,8 @@ if __name__ == "__main__":
     arguments = parser.add_argument_group("Arguments")
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
+    arguments.add_argument("-o", "--output", help="Path to output file", default="out.csv")
+    arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
 
     # Parse arguments
     args = parser.parse_args()
@@ -156,8 +158,17 @@ if __name__ == "__main__":
     print(f"Accuracy: {accuracy_test(y_test, predictions)}")
 
     # Test confusion
-    conf_mat = confusion_matrix(y_test, predictions)
-    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
-    disp.plot()
-    plt.show()
-    print(f"Conf mat: \n{conf_mat}")
+    if args.debug:
+        conf_mat = confusion_matrix(y_test, predictions)
+        disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
+        disp.plot()
+        plt.show()
+        print(f"Conf mat: \n{conf_mat}")
+
+    # Predict outputs
+    output = model.predict(X_test)
+
+    # Write results
+    data = pd.read_csv(args.input_test)
+    data['subCST'] = list(map(lambda x:all_labels[x], output))
+    data.to_csv(args.output, index=False)
