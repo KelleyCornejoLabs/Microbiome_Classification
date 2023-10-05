@@ -32,6 +32,7 @@ required = parser.add_argument_group("Required arguments")
 required.add_argument("-id", "--input-data", help="Path to file with data that VALENCIA was originally ran on",required=True)
 required.add_argument("-ip", "--input-predictions", help="Path to file with data that VALENCIA predicted",required=True)
 required.add_argument("-o","--output", help="Output report file prefix", default=None)
+required.add_argument("-g","--graph", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
 
 # Parse arguments
 args = parser.parse_args()
@@ -52,7 +53,7 @@ if False in list(input_data["sampleID"] == predictions["sampleID"]):
 correct = list(input_data["HC_subCST"] == predictions["subCST"])
 accuracy = (correct.count(True) / len(correct)) * 100
 
-print(f"Valencia accuracy: {accuracy:.2f}%")
+print(f"Accuracy: {accuracy:.2f}%")
 
 all_lbls = list(set(input_data["HC_subCST"]))
 all_lbls.sort()

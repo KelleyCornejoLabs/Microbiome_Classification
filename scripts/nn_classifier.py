@@ -766,12 +766,13 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
         print(f"Couldn't load {path}")
         exit(1)
 
-    file["Classified"] = predictions
+    file["subCST"] = predictions
 
     for i, lbl in enumerate(all_labels):
         file[f"Pct {lbl}"] = probabilities[:,i]
 
-    file.to_csv(f"{out}_classified.csv", index=False)
+    file.to_csv(f"{out}.csv", index=False)
+    print(f"Output: {out}.csv")
     
 
 # Return all the columns requested from data in order
@@ -815,6 +816,7 @@ if __name__ == "__main__":
     arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)
     arguments.add_argument("-i","--info", action=argparse.BooleanOptionalAction, help="Print info about a model", default=False)
     arguments.add_argument("-fc", "--focus-columns", help="Columns to be ignored for simple models, comma seperated")
+    arguments.add_argument("-lb", "--labeled", action=argparse.BooleanOptionalAction, help="Is data for classification labeled", default=False)
 
 
     # Parse arguments
@@ -834,6 +836,7 @@ if __name__ == "__main__":
     classify = args.classify
     test_accuracy = args.test_accuracy
     info = args.info
+    labeled = args.labeled
 
     if args.seed is not None: torch.manual_seed(args.seed)
 
@@ -922,12 +925,12 @@ if __name__ == "__main__":
         #print(list(features), list(data_features))
 
         classifier, _, _, _, all_labels = load_model(path, return_features = True)
-        classify_data(classifier, args.input_test, args.output, all_labels)
+        classify_data(classifier, args.input_test, args.output, all_labels, labeled=labeled)
 
     elif test_accuracy:
         # Load model and data from supplied path
         if debug: print("Loading model")
-        classifier, _, _, features, _ = load_model(path, return_features=True)
+        classifier, _, _, features, _ = load_model(path, return_features = True)
 
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
