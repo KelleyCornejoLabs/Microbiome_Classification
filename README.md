@@ -11,3 +11,9 @@ This script trains and deploys the neural network classifier for microbiome coun
 This script trains multiple classifiers, and finds the most performant hyperperameters from those provided to search.
 ### random_forect_classifier.py
 This script trains a random forest classifier on the given training data and evaluates is accuracy based on the testing data.
+### eval_valencia.py
+Not necessarily just for valencia. Takes the output file of the VALENCIA or neural classifier, and shows a confusion matrix and accuracy score for the classifiers.
+### evaluate_valencia.sh
+Shell script that displays the accuracy of VALENCIA's predictions based on the file it was trained on, comparing it to the HC_subCST label for the heirarchical clustering results.
+### test_multiple.sh
+Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy score and confusion matrix for each
