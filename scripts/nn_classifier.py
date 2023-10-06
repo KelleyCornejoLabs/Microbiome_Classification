@@ -59,7 +59,7 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = None, 
-              keep : None|list[str] = None) -> \
+              keep : None|list[str] = None, debug:bool = False) -> \
               tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                     list[str], torch.Tensor, torch.Tensor]:
     """Loads data from supplied (str) paths to csv training and testing data. Returns
@@ -166,7 +166,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
     testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).type(torch.float).to(device)
 
     # Split training data into the train and test sets  
-    print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
+    if debug: print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
 
     X_train, y_train = training_data, train_labels
     X_test, y_test = testing_data, test_labels
@@ -176,9 +176,9 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
     #     X_test = X_train
     #     y_test = y_train
 
-    print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
+    if debug: print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
 
-    print(f"First 5 labels of train: {', '.join(map(i_to_lbl, y_train[:5]))}")
+    if debug: print(f"First 5 labels of train: {', '.join(map(i_to_lbl, y_train[:5]))}")
 
     # Found out what proportion of the data each CST makes
     entries = dftr.groupby(["HC_subCST"]).count()["sampleID"]
@@ -193,30 +193,40 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
     return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns
 
 # Load unlabeled data for classification by model
-def load_unlabeled(path: str, drop: list[str]|None = None) -> \
-    tuple[torch.Tensor, list[str]]:
+def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = None, 
+                   debug:bool = False) -> tuple[torch.Tensor, list[str]]:
+    """Load data without labels to be fed to model for classification. A list of column names
+    to explicity keep (drop everything else) or provide a list of column names to drop"""
+
     # Read file
     try:
         df = pd.read_csv(path)
     except FileNotFoundError:
-        print(f"Couldn't find dile at path '{path}'")
+        print(f"Couldn't find file at path '{path}'")
         exit(1)
 
-    # Drop columns if required
-    ignore = False
-    if drop != None:
+    # Only keep columns requested 
+    if keep != None:
+        # Drop all non-requested columns
+        for col in list(df.columns):
+            if not col in keep:
+                if debug: print(f"Dropping {col}")
+                drop += [col]
+            else:
+                if debug: print("KEEP", col)
+
+    # Drop columns if required=
+    if drop != []:
+        loaded = df
         for col in drop:
             try:
-                df = df.drop(columns=[col])
+                loaded = loaded.drop(columns=[col])
             except ValueError:
                 print(f"Failed to drop {col} from training set")
-                if not ignore:
-                    ignore = bool(input("Continue anyways?"))
-                    if ignore: continue
-                    exit()
-
-    # Don't feed ID and read counts to net
-    loaded = df.drop(columns=["sampleID", "read_count"])
+                exit()
+    else:
+        # Don't feed ID and read counts to net. Removed previously if keep
+        loaded = df.drop(columns=["sampleID", "read_count"])
 
     # Normalize
     count_columns = loaded.columns
@@ -284,6 +294,8 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
 
 # Define function to find accuracy of model
 def accuracy_test(lbls: torch.Tensor, predictions: torch.Tensor) -> float:
+    """Returns a float accuracy given a one-hot list of labels, and a one-hot list of predictions"""
+
     # Do argmax to get index, so as not to do torch.eq on a 2d array
     correct = torch.eq(torch.Tensor([lbl.argmax() for lbl in lbls]), torch.Tensor([p.argmax() for p in predictions])).sum().item()
     return (correct / len(predictions)) * 100
@@ -316,6 +328,8 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
                        features: list[str]) -> dict[str, float]:
+    """Given a model, data, and labels, return a dictionary containing the importance 
+    ( |accuracy - accuracy_with_feature_permuted| ) of each feature"""
 
     # NOTE: works well for increasing accuracy, but not so well for less common classes
     # Should weight less frequent classes more heavily
@@ -473,10 +487,10 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
     with torch.inference_mode():
         test_pred = classifier(X_test)
         with open(path + "_metrics.txt", "w") as f:
-            print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
+            if debug: print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
             f.write(f"Final Max Accuracy: {max_acc}% in {time_taken}\n")
 
-            print(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
+            if debug: print(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
             f.write(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
 
             for i in range(len(epoch_count)):
@@ -500,6 +514,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
 # Pepare data. Convert from one-hot cuda tensor to scalar np array
 def prep_data(data: torch.Tensor) -> np.ndarray:
+    """Converts data from one-hot cuda tensor to np array of floats Scikit"""
     prepped = data.cpu()
     prepped = prepped.argmax(dim=1)
     return prepped.numpy()
@@ -507,6 +522,8 @@ def prep_data(data: torch.Tensor) -> np.ndarray:
 # Test model, taking various metrics
 def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor, 
          all_labels: list[str]) -> None:
+    """Test model, print accuracy and confusion matrix"""
+
     if not skl:
         print("Scikit Learn required for testing")
         return
@@ -590,7 +607,8 @@ class Plotter:
 # Plot boundary line of two features
 def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor, 
                       all_labels: list[str], keys: list[str]) -> None:
-    
+    """Plot the predicted class on 2d plot with two chosen features as x and y axis"""
+
     if not plt:
         print("Matplot required for plot_correlations.")
         return
@@ -684,7 +702,9 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
                         imporatance_threshold: float, lr: float, max_epochs: int, metrics_interval: int, 
                         thresh: float, loss_type: str, optim_type: str, linear: bool, path: str, 
                         focus: list[str], debug: bool = False, hidden: None|int = None, patience: int = 100, 
-                        models: int =1) -> tuple[nn.Sequential, torch.Tensor, torch.Tensor, list[str]]:
+                        models: int = 1) -> tuple[nn.Sequential, torch.Tensor, torch.Tensor, list[str]]:
+    """Train a simpler model using the given settings and return the best model. Columns used are 
+    the entries in sorted_importances are greater than importance_threashold"""
     
     # Determine columns to cut
     if focus == None:
@@ -692,13 +712,14 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
         
         # Determine new data containing the Significant columns
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
-                                                                                                  drop=unimportant_cols)
+                                                                                                  drop=unimportant_cols,
+                                                                                                  debug=debug)
     else: # Or manually keep columns
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
-                                                                                                  keep=focus)
+                                                                                                  keep=focus, debug=debug)
 
    
-    print(f"Training simpler model on columns: {','.join(list(Skeys))}")
+    if debug: print(f"Training simpler model on columns: {','.join(list(Skeys))}")
 
     if hidden == None:
         hidden = int(round(len(SX_train[0]) * (2/3) + len(Sy_train[0])))
@@ -728,6 +749,8 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
 
 # Rename the best performing model to be generic, and get rid of the rest
 def rename_best (path: str, best: int, models: int):
+    """Rename the best model to remove index, and delete other models"""
+
     os.rename(f"{path}_{best}_metrics.txt", f"{path}_metrics.txt")
     os.rename(f"{path}_{best}_nn.pt", f"{path}_nn.pt")
     os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
@@ -743,10 +766,12 @@ def rename_best (path: str, best: int, models: int):
 
 # Classify the samples in this file and add the classification to the output file
 def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[str], 
-                   drop: list[str] = [], labeled: bool = True):
-    
-    if labeled: drop += ['HC_subCST']
-    data, count_cols = load_unlabeled(path, drop=drop)
+                   features: list[str], drop: list[str] = [], labeled: bool = True):
+    """Read the file from path and use the model to classify it. Copy the data and the 
+    classificaitons to the output file"""
+
+    # Load unlabeled data for the columns used by model
+    data, count_cols = load_unlabeled(path, keep=features)
 
     # Get predictions
     model.eval()
@@ -778,6 +803,8 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
 # Return all the columns requested from data in order
 # TODO
 def get_cols(data, columns, data_features, strict = False):
+    "Unimpemented; Unused"
+
     # For loose equality, standardize strings
     standardize = lambda x:list(map(lambda y:y.lower().replace(' ','_'), x))
     if not strict:
@@ -854,12 +881,14 @@ if __name__ == "__main__":
             exit(1)
 
         # Load data from supplied path
-        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test)
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
+                                                                                           args.input_test, 
+                                                                                           debug=debug)
 
         # Determine hidden layers as (2/3)*input + output
         if args.hidden_layers == None:
             hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
-            print(hidden)
+            if debug: print(f"Using {hidden} hidden layers")
         else:
             hidden = args.hidden_layers
 
@@ -924,8 +953,8 @@ if __name__ == "__main__":
         # TODO: Add model predictions to the file
         #print(list(features), list(data_features))
 
-        classifier, _, _, _, all_labels = load_model(path, return_features = True)
-        classify_data(classifier, args.input_test, args.output, all_labels, labeled=labeled)
+        classifier, _, _, features, all_labels = load_model(path, return_features = True)
+        classify_data(classifier, args.input_test, args.output, all_labels, features, labeled=labeled)
 
     elif test_accuracy:
         # Load model and data from supplied path
@@ -934,7 +963,7 @@ if __name__ == "__main__":
 
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
-                        load_data(args.input_train, args.input_test, keep=features)
+                        load_data(args.input_train, args.input_test, keep=features, debug=debug)
 
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)

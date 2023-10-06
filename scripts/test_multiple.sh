@@ -10,7 +10,7 @@ test_set_path="./out_test.csv"
 
 # Neural classifier paths also need to be set by user
 classifier_path="./nn_classifier.py"
-model_path="eval"
+model_path="evaluation_model"
 
 # Random forest classifier paths
 forest_path="./random_forest_classifier.py"
@@ -26,15 +26,26 @@ python $valencia_prep_path -i $test_set_path -o $test_set_prepped_path
 python $valencia_path -r $test_centroids -i $test_set_prepped_path -o $out_path_valencia
 
 # Evaluate valencia
-python $valencia_eval_path -ip $out_path_valencia.csv -id $test_set_path
+echo "---Valencia---"
+python $valencia_eval_path -ip $out_path_valencia.csv -id $test_set_path --no-graph
 
 # Evaluate neural classifier
-python $classifier_path -itr $train_set_path -ite $test_set_path -p $model_path --no-debug
+python $classifier_path -itr $train_set_path -ite $test_set_path -tm 3 -ts -p $model_path --no-debug
 python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path
 
-python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path
+echo "---Neural---"
+python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph
+
+# Test simple version
+model_path+="_simplified"
+python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path
+
+echo "---Simple-Neural---"
+python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph
 
 # Evaluate random forest classifier
 python $forest_path --no-debug -itr $train_set_path -ite $test_set_path -o $out_path_forest.csv
 
-python $valencia_eval_path -ip $out_path_forest.csv -id $test_set_path
+
+echo "---Random-Forest---"
+python $valencia_eval_path -ip $out_path_forest.csv -id $test_set_path --no-graph
