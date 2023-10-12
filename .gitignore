@@ -161,6 +161,7 @@ cython_debug/
 
 scripts/nn_training_train.csv
 scripts/nn_training_test.csv
+scripts/test_scripts/
 
 models/
 data/

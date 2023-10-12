@@ -59,7 +59,7 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = None, 
-              keep : None|list[str] = None, debug:bool = False) -> \
+              keep : None|list[str] = None, debug:bool = False, norm_fn:str = "none") -> \
               tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                     list[str], torch.Tensor, torch.Tensor]:
     """Loads data from supplied (str) paths to csv training and testing data. Returns
@@ -156,10 +156,16 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
 
     # TODO: Handle if two files have same columns in different order?
 
-    # Normalize the columns
+    # Normalize the columns based on count data
+    # Always do this to account for 'quality' difference between samples
     for column in count_columns:
         normalized_train_data[column] /= dftr["read_count"]
         normalized_test_data[column] /= dfte["read_count"]
+
+    if norm_fn == "log":
+        for column in count_columns:
+            normalized_train_data[column] /= normalized_train_data[column].log10()
+            normalized_test_data[column] /= normalized_test_data[column].log10()
 
     # Format for neural net
     training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
@@ -844,6 +850,7 @@ if __name__ == "__main__":
     arguments.add_argument("-i","--info", action=argparse.BooleanOptionalAction, help="Print info about a model", default=False)
     arguments.add_argument("-fc", "--focus-columns", help="Columns to be ignored for simple models, comma seperated")
     arguments.add_argument("-lb", "--labeled", action=argparse.BooleanOptionalAction, help="Is data for classification labeled", default=False)
+    arguments.add_argument("-n", "--normalizing-function", help="Method to use for normalizing data. none (default), log, tmm, rle", default="none")
 
 
     # Parse arguments
@@ -864,6 +871,7 @@ if __name__ == "__main__":
     test_accuracy = args.test_accuracy
     info = args.info
     labeled = args.labeled
+    norm_fn = args.normalization_function
 
     if args.seed is not None: torch.manual_seed(args.seed)
 
