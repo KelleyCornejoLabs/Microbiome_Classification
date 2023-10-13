@@ -70,6 +70,7 @@ for optim in optims:
                 acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
                                           0.1, loss, optim, linear, all_labels, ordered_prevelence, path, struct)
                 model_performances.append(acc)
+            print(f"Done: test {test}/{tests}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}")
             performaces[f"{optim}_{loss}_{lr}"] = sum(model_performances) / tests
 
 with open(args.path+"_metrics.txt", "w") as f:
