@@ -16,6 +16,7 @@ arguments.add_argument("-lr", "--learning-rates", help="Comma seperated lsit of 
 arguments.add_argument("-nl", "--non-linear", help="Test non-linear", required=False)
 arguments.add_argument("-p", "--path", help="Path to save findings", default="results")
 arguments.add_argument("-pt", "--path-tests", help="Path to Tests", default="tests/results")
+arguments.add_argument("-n", "--norms", help="Norm methods", default="none")
 
 args = parser.parse_args()
 
@@ -44,6 +45,12 @@ for loss in losses:
         print("loss must be from", ' '.join(nn_classifier.losses.keys()))
         sys.exit(1)
 
+norms = args.norms.split(",")
+for n in norms:
+    if not n in ("none", "log"):
+        print("norm bad")
+        sys.exit(1)
+
 try:
     lrs = [float(lr) for lr in args.learning_rates.split(",")]
 except TypeError:
@@ -51,10 +58,8 @@ except TypeError:
     sys.exit(1)
 
 linear = not args.non_linear == "True"
-print(linear)
-
-# Get testing data
-X_train, y_train, X_test, y_test, all_labels, ordered_prevelence = nn_classifier.load_data(args.input_train, args.input_test)
+print("Linear", linear)
+print(f"Epochs {max_epochs}")
 
 # TODO: Try pruning algorithms
 
@@ -63,15 +68,18 @@ performaces = {}
 for optim in optims:
     for loss in losses:
         for lr in lrs:
-            model_performances = []
-            for test in range(tests):
-                path = f"{args.path_tests}_{optim}_{loss}_{lr}_{test}"
-                model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), False)
-                acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
-                                          0.1, loss, optim, linear, all_labels, ordered_prevelence, path, struct)
-                model_performances.append(acc)
-            print(f"Done: test {test}/{tests}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}")
-            performaces[f"{optim}_{loss}_{lr}"] = sum(model_performances) / tests
+            for n in norms:
+                # Get testing data
+                X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n)
+
+                model_performances = []
+                for test in range(tests):
+                    path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{test}".replace(".",",") # EU style
+                    model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), False)
+                    acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
+                                              0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=True, patience=10000)
+                    model_performances.append(acc)
+                performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
 
 with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"Linear: {linear}")
@@ -79,6 +87,7 @@ with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"\nLoss functions: {' '.join(losses)}")
     f.write(f"\nOptimizers: {' '.join(optims)}")
     f.write(f"\nLearning Rates: {(lrs)}")
+    f.write(f"\nNorms: {' '.join(norms)}")
     f.write(f"\nEpochs: {max_epochs}")
     f.write(f"\nBest performances for each setup: {performaces}")
     f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
