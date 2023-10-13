@@ -60,9 +60,9 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = None, 
-              keep : None|list[str] = None, debug:bool = False, norm:str = "none") -> \
-              tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
-                    list[str], torch.Tensor, torch.Tensor]:
+              keep : None|list[str] = None, debug:bool = False, norm:str = "none",
+              regex_remove:list[str] = [","]) -> tuple[torch.Tensor, torch.Tensor, 
+              torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
     """Returns: X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns.\n
     Loads data from supplied (str) paths to csv training and testing data. Returns
     normalized 'x' input data as a tensor on the device, 'y' output data as one hot tensors
@@ -144,8 +144,6 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
         print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
         exit()
 
-    # Get columns to normalize, remove if not to be kept
-    count_columns = normalized_train_data.columns
 
     if keep != None:
         for col in count_columns:
@@ -153,13 +151,18 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
                 normalized_test_data = normalized_test_data.drop(columns=[col])
                 normalized_train_data = normalized_train_data.drop(columns=[col])
 
-        count_columns = normalized_train_data.columns
-
 
     # TODO: Regex to remove g_*
-    #df = df[df.columns.drop(list(df.filter(regex='Test')))]
+    if regex_remove != [","]:
+        for regex in regex_remove:
+            print(f"Removing from regex {regex}: {', '.join(list(normalized_train_data.filter(regex=regex)))}")
+            normalized_train_data = normalized_train_data[normalized_train_data.columns.drop(list(normalized_train_data.filter(regex=regex)))]
+            normalized_test_data = normalized_test_data[normalized_test_data.columns.drop(list(normalized_test_data.filter(regex=regex)))]
 
     # TODO: Handle if two files have same columns in different order?
+
+    # Get columns to normalize, remove if not to be kept
+    count_columns = normalized_train_data.columns
 
     # Normalize the columns based on count data
     # Adjust for sample "quality" always
@@ -713,9 +716,10 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path: str, test_path: str, sorted_importances: dict[str, float], 
                         imporatance_threshold: float, lr: float, max_epochs: int, metrics_interval: int, 
-                        thresh: float, loss_type: str, optim_type: str, linear: bool, path: str, 
-                        focus: list[str], debug: bool = False, hidden: None|int = None, patience: int = 100, 
-                        models: int = 1) -> tuple[nn.Sequential, torch.Tensor, torch.Tensor, list[str]]:
+                        thresh: float, loss_type: str, optim_type: str, linear: bool, path: str, focus: list[str], 
+                        norm:str = "none", debug: bool = False, hidden: None|int = None, patience: int = 100, 
+                        models: int = 1, regex_remove:list[str] = [","]) -> tuple[nn.Sequential, torch.Tensor, 
+                        torch.Tensor, list[str]]:
     """Train a simpler model using the given settings and return the best model. Columns used are 
     the entries in sorted_importances are greater than importance_threashold"""
     
@@ -726,10 +730,13 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
         # Determine new data containing the Significant columns
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
                                                                                                   drop=unimportant_cols,
-                                                                                                  debug=debug)
+                                                                                                  debug=debug, norm=norm,
+                                                                                                  regex_remove=regex_remove)
     else: # Or manually keep columns
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
-                                                                                                  keep=focus, debug=debug)
+                                                                                                  keep=focus, debug=debug, 
+                                                                                                  norm=norm, 
+                                                                                                  regex_remove=regex_remove)
 
    
     if debug: print(f"Training simpler model on columns: {','.join(list(Skeys))}")
@@ -844,6 +851,7 @@ if __name__ == "__main__":
     arguments.add_argument("-c","--continue-train", action=argparse.BooleanOptionalAction, help="Should a saved model be trained more?", default=False)
     arguments.add_argument("-m","--metrics-interval", type=int, help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
+    arguments.add_argument("-lo","--load", action=argparse.BooleanOptionalAction, help="Load model to train a simpler one", default=False)
     arguments.add_argument("-o","--optim", help="Optimizer. sgd, or adam (default)", default="adam")
     arguments.add_argument("-li","--linear", action=argparse.BooleanOptionalAction, help="Don't use ReLU?", default=False)
     arguments.add_argument("-pa","--patience", type=int, help="How many stagnant epochs to wait to cut lr?", default=100)
@@ -858,6 +866,7 @@ if __name__ == "__main__":
     arguments.add_argument("-fc", "--focus-columns", help="Columns to be ignored for simple models, comma seperated")
     arguments.add_argument("-lb", "--labeled", action=argparse.BooleanOptionalAction, help="Is data for classification labeled", default=False)
     arguments.add_argument("-n", "--normalizing-function", help="Method to use for normalizing data. none (default), log, tmm, rle", default="none")
+    arguments.add_argument("-rr", "--regex-remove", help="Method to use for normalizing data. none (default), log, tmm, rle", default="")
 
 
     # Parse arguments
@@ -879,6 +888,9 @@ if __name__ == "__main__":
     info = args.info
     labeled = args.labeled
     norm_fn = args.normalizing_function
+    load = args.load
+
+    regex_remove = args.regex_remove.split(",")
 
     if args.seed is not None: torch.manual_seed(args.seed)
 
@@ -898,7 +910,8 @@ if __name__ == "__main__":
         # Load data from supplied path
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
                                                                                            args.input_test, 
-                                                                                           debug=debug, norm=norm_fn)
+                                                                                           debug=debug, norm=norm_fn,
+                                                                                           regex_remove=regex_remove)
 
         # Determine hidden layers as (2/3)*input + output
         if args.hidden_layers == None:
@@ -907,7 +920,7 @@ if __name__ == "__main__":
         else:
             hidden = args.hidden_layers
 
-        # Set up model=
+        # Set up model
         if continue_train:
             # Improve existing model
             if debug: print(f"Continuing to train {path + '_nn.pt'}")
@@ -915,7 +928,10 @@ if __name__ == "__main__":
             train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                   args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, 
                   optim=optim, patience=args.patience, debug=debug)
-            
+
+        elif load:
+            if debug: print(f"Loading {path + '_nn.pt'}")
+         
         else:
             # Train a model from scratch
             if debug: print("Training fresh model")
@@ -950,7 +966,8 @@ if __name__ == "__main__":
                                                                                  metrics_interval, thresh, args.loss, 
                                                                                  args.optim, linear, path, simple_cols,
                                                                                  patience=args.patience, debug=debug,
-                                                                                 models = args.train_multiple)
+                                                                                 models = args.train_multiple, norm=norm_fn,
+                                                                                 regex_remove=regex_remove)
 
             # Evaluate model and plot correlations
             if debug:
@@ -978,7 +995,7 @@ if __name__ == "__main__":
 
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
-                        load_data(args.input_train, args.input_test, keep=features, debug=debug)
+                        load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove)
 
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
