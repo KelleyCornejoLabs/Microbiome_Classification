@@ -5,9 +5,10 @@
 # Outputs: A file containing parameters for the neural network and predictions for each 
 #          sample in the input data
 
-# Time and os are part of the standard library
+# Time os and math are part of the standard library
 import time
 import os
+import math
 
 try:
     import pandas as pd
@@ -59,10 +60,11 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = None, 
-              keep : None|list[str] = None, debug:bool = False, norm_fn:str = "none") -> \
+              keep : None|list[str] = None, debug:bool = False, norm:str = "none") -> \
               tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                     list[str], torch.Tensor, torch.Tensor]:
-    """Loads data from supplied (str) paths to csv training and testing data. Returns
+    """Returns: X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns.\n
+    Loads data from supplied (str) paths to csv training and testing data. Returns
     normalized 'x' input data as a tensor on the device, 'y' output data as one hot tensors
     corresponding to that classes index in all_labels, a sorted list encoding the order of the classes,
     ordered_prevelence which is a tensor on the device with adjused prevelences of each class, and 
@@ -154,22 +156,27 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
         count_columns = normalized_train_data.columns
 
 
+    # TODO: Regex to remove g_*
+    #df = df[df.columns.drop(list(df.filter(regex='Test')))]
+
     # TODO: Handle if two files have same columns in different order?
 
     # Normalize the columns based on count data
-    # Always do this to account for 'quality' difference between samples
+    # Adjust for sample "quality" always
     for column in count_columns:
         normalized_train_data[column] /= dftr["read_count"]
         normalized_test_data[column] /= dfte["read_count"]
 
-    if norm_fn == "log":
+    if norm == "log":
         for column in count_columns:
-            normalized_train_data[column] /= normalized_train_data[column].log10()
-            normalized_test_data[column] /= normalized_test_data[column].log10()
+            normalized_train_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_train_data[column]))
+            normalized_test_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_test_data[column]))
 
     # Format for neural net
     training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
     testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).type(torch.float).to(device)
+
+    
 
     # Split training data into the train and test sets  
     if debug: print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
@@ -514,7 +521,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
             plt.plot(epoch_count, prep(test_losses))
             #plt.plot(epoch_count, test_accuracies)
             plt.legend(["Train Loss", "Test Loss", "Test Accuracy"])
-            plt.savefig(f"{path}_plt")
+            plt.savefig(f"{path}_plt.png")
 
     return max_acc
 
@@ -871,7 +878,7 @@ if __name__ == "__main__":
     test_accuracy = args.test_accuracy
     info = args.info
     labeled = args.labeled
-    norm_fn = args.normalization_function
+    norm_fn = args.normalizing_function
 
     if args.seed is not None: torch.manual_seed(args.seed)
 
@@ -891,7 +898,7 @@ if __name__ == "__main__":
         # Load data from supplied path
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
                                                                                            args.input_test, 
-                                                                                           debug=debug)
+                                                                                           debug=debug, norm=norm_fn)
 
         # Determine hidden layers as (2/3)*input + output
         if args.hidden_layers == None:
