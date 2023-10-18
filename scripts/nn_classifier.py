@@ -50,6 +50,13 @@ except:
     print("Optional package matplotlib not available")
     mpl = False
 
+try:
+    import conorm
+    cnrm = True
+except:
+    print("Optional package conorm not available. TMM normalization cannot be used")
+    cnrm = False
+
 # Set up GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
 if device == "cuda":
@@ -59,9 +66,9 @@ losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Load data for training and validation from paths to csv test and training data files
-def load_data(train_path: str, test_path: str, drop: None|list[str] = None, 
+def load_data(train_path: str, test_path: str, drop: None|list[str] = [], 
               keep : None|list[str] = None, debug:bool = False, norm:str = "none",
-              regex_remove:list[str] = [","]) -> tuple[torch.Tensor, torch.Tensor, 
+              regex_remove:list[str] = ['']) -> tuple[torch.Tensor, torch.Tensor, 
               torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
     """Returns: X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns.\n
     Loads data from supplied (str) paths to csv training and testing data. Returns
@@ -96,11 +103,11 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
 
     # Drop columns for simplified model
     ignore = False
-    if drop != None:
+    if drop != []:
         for col in drop:
             try:
                 dftr = dftr.drop(columns=[col])
-            except ValueError:
+            except KeyError:
                 print(f"Failed to drop {col} from training set")
                 if not ignore:
                     ignore = bool(input("Continue anyways?"))
@@ -109,7 +116,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
 
             try:
                 dfte = dfte.drop(columns=[col])
-            except ValueError:
+            except KeyError:
                 print(f"Failed to drop {col} from test set")
                 if not ignore:
                     ignore = bool(input("Continue anyways?"))
@@ -153,7 +160,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
 
 
     # TODO: Regex to remove g_*
-    if regex_remove != [","]:
+    if regex_remove != ['']:
         for regex in regex_remove:
             print(f"Removing from regex {regex}: {', '.join(list(normalized_train_data.filter(regex=regex)))}")
             normalized_train_data = normalized_train_data[normalized_train_data.columns.drop(list(normalized_train_data.filter(regex=regex)))]
@@ -174,6 +181,13 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = None,
         for column in count_columns:
             normalized_train_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_train_data[column]))
             normalized_test_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_test_data[column]))
+    elif norm == "tmm":
+        if not cnrm:
+            print("conorm package required for TMM normalization")
+            exit(1)
+
+        normalized_train_data = conorm.tmm(normalized_train_data.T).T
+        normalized_test_data = conorm.tmm(normalized_test_data.T).T
 
     # Format for neural net
     training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
@@ -412,7 +426,8 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
     # NOTE: Use a different lr_scheduler for SGD
     #if optim_type != "sgd":
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=patience, verbose=debug)
+    if patience != 0:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=patience, verbose=debug)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -449,7 +464,8 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
         # Step lr scheduler
         #if optim_type != "sgd":
-        scheduler.step(loss)
+        if patience != 0:
+            scheduler.step(loss)
 
         # Take metrics
         if epoch % metrics_interval == 0:
@@ -996,7 +1012,7 @@ if __name__ == "__main__":
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
                         load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove)
-
+ 
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
         plot_correlations(classifier, X_test, y_test, all_labels, keys)

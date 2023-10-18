@@ -1,6 +1,8 @@
 import sys
 import argparse
 import nn_classifier
+import time
+import math
 
 # Arguments for tool
 parser = argparse.ArgumentParser(description="Trains several neural classifiers to find best hyperparameters")
@@ -17,6 +19,7 @@ arguments.add_argument("-nl", "--non-linear", help="Test non-linear", required=F
 arguments.add_argument("-p", "--path", help="Path to save findings", default="results")
 arguments.add_argument("-pt", "--path-tests", help="Path to Tests", default="tests/results")
 arguments.add_argument("-n", "--norms", help="Norm methods", default="none")
+arguments.add_argument("-r", "--regexs", help="regexs", default="none")
 
 args = parser.parse_args()
 
@@ -47,9 +50,11 @@ for loss in losses:
 
 norms = args.norms.split(",")
 for n in norms:
-    if not n in ("none", "log"):
+    if not n in ("none", "log", "tmm"):
         print("norm bad")
         sys.exit(1)
+
+regex = args.regexs.split(",")
 
 try:
     lrs = [float(lr) for lr in args.learning_rates.split(",")]
@@ -62,6 +67,7 @@ print("Linear", linear)
 print(f"Epochs {max_epochs}")
 
 # TODO: Try pruning algorithms
+start = time.time()
 
 # Try each option
 performaces = {}
@@ -69,8 +75,9 @@ for optim in optims:
     for loss in losses:
         for lr in lrs:
             for n in norms:
+                
                 # Get testing data
-                X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n)
+                X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n, regex_remove=regex)
 
                 model_performances = []
                 for test in range(tests):
@@ -83,6 +90,8 @@ for optim in optims:
                 print(f"Done: test {test}/{tests}, norm {norms.index(n)}/{len(norms)}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}")
                 performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
 
+taken = start-time.time()
+
 with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"Linear: {linear}")
     f.write(f"\nTested: {tests} times")
@@ -93,6 +102,8 @@ with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"\nEpochs: {max_epochs}")
     f.write(f"\nBest performances for each setup: {performaces}")
     f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
+    f.write(f"\nTook: {math.floor(taken/60)}:{math.floor(taken/60)}:{round(taken%60)}")
 
 print(performaces)
 print(f"Best performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
+print(f"\nTook: {math.floor(taken/3600)}:{math.floor((taken/60)%60):02}:{round(taken%60):02}")
