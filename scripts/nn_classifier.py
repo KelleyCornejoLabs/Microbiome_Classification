@@ -151,6 +151,8 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
         exit()
 
+    # Get columns to normalize, remove if not to be kept
+    count_columns = normalized_train_data.columns
 
     if keep != None:
         for col in count_columns:
@@ -929,8 +931,8 @@ if __name__ == "__main__":
                                                                                            debug=debug, norm=norm_fn,
                                                                                            regex_remove=regex_remove)
 
-        # Determine hidden layers as (2/3)*input + output
-        if args.hidden_layers == None:
+        # Determine hidden neurons as (2/3)*input + output
+        if args.hidden_neurons == None:
             hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
             if debug: print(f"Using {hidden} hidden layers")
         else:
