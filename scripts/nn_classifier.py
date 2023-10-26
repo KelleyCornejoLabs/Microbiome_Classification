@@ -151,6 +151,8 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
         exit()
 
+    # Get columns to normalize, remove if not to be kept
+    count_columns = normalized_train_data.columns
 
     if keep != None:
         for col in count_columns:
@@ -278,7 +280,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
     if old:
         # Old architecture is WAY overcomplicated, not reccomended
         if not linear:
-            structure = f"OLD Non-linear {train_features} -> {classes}"
+            structure = f"OLD Non-linear {train_features} -> {hidden_features} -> {classes}"
             if dbg: print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
@@ -291,7 +293,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
                 nn.Softmax(dim=1)
             ).to(device)
         else:
-            structure = f"OLD Linear {train_features} -> {classes}"
+            structure = f"OLD Linear {train_features} -> {hidden_features} -> {classes}"
             if dbg: print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
@@ -722,12 +724,38 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
     classifier.load_state_dict(checkpoint["model"])
 
     # Load optimizer
-    optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
-    optim.load_state_dict(checkpoint["optim"])
+    if checkpoint.get("optim_type") != None:
+        optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
+        optim.load_state_dict(checkpoint["optim"])
 
     # Model, structure (str), optimizer, features (optional)
     if return_features: return classifier, structure, optim, list(checkpoint["features"]), list(checkpoint["all_labels"])
     else: return classifier, structure, optim
+
+
+# Load model and return all the info about it
+def get_model_info(path: str) -> tuple[dict, str, list[str], str, float, dict]:
+    """Returns the model state dictionary, model structure, list of output classes, the 
+    features the model uses, optimizer type used in training, the learning rate from 
+    when it was saved, and the optimizer's state dictionary"""
+
+    # Load 'checkpoint' dict
+    try:
+        checkpoint = torch.load(path + "_nn.pt")
+    except:
+        print(f"Couldn't read {path}_nn.pt")
+        exit(1)
+
+    # Get all the info from the model checkpoint if it exists
+    model_sd = checkpoint.get("model")
+    structure = checkpoint.get("structue")
+    all_labels = checkpoint.get("all_labels")
+    features = checkpoint.get("features")
+    optim_type = checkpoint.get("optim_type")
+    lr = checkpoint.get("lr")
+    optim_sd = checkpoint.get("optim")
+    
+    return model_sd, structure, all_labels, features, optim_type, lr, optim_sd
 
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path: str, test_path: str, sorted_importances: dict[str, float], 
@@ -857,9 +885,10 @@ if __name__ == "__main__":
     # Arguments for tool
     arguments = parser.add_argument_group("Arguments")
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", default=None)
-    arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
-    arguments.add_argument("-out", "--output", help="Path to output data as csv")
+    arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", default=None)
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
+    arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
+    arguments.add_argument("-out", "--output", help="Path to output data as csv")
     arguments.add_argument("-tlr","--threshhold-lr", type=float, help="Train until lr is dropped to this level", default=0.00001)
     arguments.add_argument("-lr","--learning-rate", type=float, help="Learning rate for ai", default=0.01)
     arguments.add_argument("-me","--max-epochs", type=int, help="Maximum number of epochs to train for. 50000 is default", default=50000)
@@ -872,14 +901,13 @@ if __name__ == "__main__":
     arguments.add_argument("-li","--linear", action=argparse.BooleanOptionalAction, help="Don't use ReLU?", default=False)
     arguments.add_argument("-pa","--patience", type=int, help="How many stagnant epochs to wait to cut lr?", default=100)
     arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
-    arguments.add_argument("-hl","--hidden-layers", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
+    arguments.add_argument("-hn","--hidden-neurons", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=True)
     arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on signigicant parameters", default=False)
-    arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
     arguments.add_argument("-ta","--test-accuracy", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test and check accuracy", default=False)
     arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)
     arguments.add_argument("-i","--info", action=argparse.BooleanOptionalAction, help="Print info about a model", default=False)
-    arguments.add_argument("-fc", "--focus-columns", help="Columns to be ignored for simple models, comma seperated")
+    arguments.add_argument("-fc", "--focus-columns", help="Columns to be used for simple models, comma seperated")
     arguments.add_argument("-lb", "--labeled", action=argparse.BooleanOptionalAction, help="Is data for classification labeled", default=False)
     arguments.add_argument("-n", "--normalizing-function", help="Method to use for normalizing data. none (default), log, tmm, rle", default="none")
     arguments.add_argument("-rr", "--regex-remove", help="Method to use for normalizing data. none (default), log, tmm, rle", default="")
@@ -929,8 +957,8 @@ if __name__ == "__main__":
                                                                                            debug=debug, norm=norm_fn,
                                                                                            regex_remove=regex_remove)
 
-        # Determine hidden layers as (2/3)*input + output
-        if args.hidden_layers == None:
+        # Determine hidden neurons as (2/3)*input + output
+        if args.hidden_neurons == None:
             hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
             if debug: print(f"Using {hidden} hidden layers")
         else:
@@ -1022,7 +1050,14 @@ if __name__ == "__main__":
 
     elif info:
         # Load model and print info
-        _, structure, _, features, all_labels = load_model(path, return_features = True)
+        model_state, structure, all_labels, features, optim_type, lr, optim_state = get_model_info(path)
+
+        # Make len and .join() work for invalid models
+        if features == None: features = []
+        if all_labels == None: all_labels = []
+
+        # Print info for user
         print(f"Model at [{path}]'s structure is {structure}")
         print(f"It requires {len(features)} features: {', '.join(features)}") 
         print(f"It predicts {len(all_labels)} classes: {', '.join(all_labels)}") 
+        print(f"Optimizer used: {optim_type} Final learning rate: {lr}") 

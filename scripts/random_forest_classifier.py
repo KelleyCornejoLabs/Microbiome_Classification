@@ -132,13 +132,14 @@ if __name__ == "__main__":
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
     arguments.add_argument("-o", "--output", help="Path to output file", default="out.csv")
+    arguments.add_argument("-n", "--norm", help="noralization", default="none")
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
 
     # Parse arguments
     args = parser.parse_args()
 
     # Load all data an convert it to numpy for sklearn
-    X_train, y_train, X_test, y_test, all_labels, _, _ = nn_classifier.load_data(args.input_train, args.input_test)
+    X_train, y_train, X_test, y_test, all_labels, _, _ = nn_classifier.load_data(args.input_train, args.input_test, norm=args.norm)
 
     X_train = X_train.cpu().numpy()
     X_test = X_test.cpu().numpy()
