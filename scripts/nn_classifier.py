@@ -80,6 +80,14 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
 
     # TODO: Normalize from calculated totals not total row
 
+    if train_path == None:
+        print("Train path required")
+        exit()
+
+    if test_path == None:
+        print("Test path required")
+        exit()
+
     # Load and validate the input data
     try:
         dftr = pd.read_csv(train_path)
@@ -161,7 +169,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
                 normalized_train_data = normalized_train_data.drop(columns=[col])
 
 
-    # Regex to remove g_*. Use "^[a-z]_"
+    # TODO: Regex to remove g_*
     if regex_remove != ['']:
         for regex in regex_remove:
             print(f"Removing from regex {regex}: {', '.join(list(normalized_train_data.filter(regex=regex)))}")
@@ -720,16 +728,29 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
         exit(1)
 
     # Create the classifier and load its state from nn.pt
-    classifier, structure, _ = generate_model(linear, input_size, hidden_size, output_size, debug)
+    classifier, structure, _ = generate_model(linear, input_size, hidden_size, output_size, debug, old=old_arch)
     classifier.load_state_dict(checkpoint["model"])
 
     # Load optimizer
     if checkpoint.get("optim_type") != None:
         optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
         optim.load_state_dict(checkpoint["optim"])
+    else:
+        # This is for the case where the model has been converted from an older version of the program
+        optim = None
+
+    if checkpoint.get("features") != None:
+        features = list(checkpoint["features"])
+    else:
+        features = None
+
+    if checkpoint.get("all_labels") != None:
+        all_labels = list(checkpoint["all_labels"])
+    else:
+        all_labels = None
 
     # Model, structure (str), optimizer, features (optional)
-    if return_features: return classifier, structure, optim, list(checkpoint["features"]), list(checkpoint["all_labels"])
+    if return_features: return classifier, structure, optim, features, all_labels
     else: return classifier, structure, optim
 
 
