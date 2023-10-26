@@ -159,7 +159,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
                 normalized_train_data = normalized_train_data.drop(columns=[col])
 
 
-    # TODO: Regex to remove g_*
+    # Regex to remove g_*. Use "^[a-z]_"
     if regex_remove != ['']:
         for regex in regex_remove:
             print(f"Removing from regex {regex}: {', '.join(list(normalized_train_data.filter(regex=regex)))}")
