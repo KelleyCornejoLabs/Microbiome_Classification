@@ -280,7 +280,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
     if old:
         # Old architecture is WAY overcomplicated, not reccomended
         if not linear:
-            structure = f"OLD Non-linear {train_features} -> {classes}"
+            structure = f"OLD Non-linear {train_features} -> {hidden_features} -> {classes}"
             if dbg: print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
@@ -293,7 +293,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
                 nn.Softmax(dim=1)
             ).to(device)
         else:
-            structure = f"OLD Linear {train_features} -> {classes}"
+            structure = f"OLD Linear {train_features} -> {hidden_features} -> {classes}"
             if dbg: print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
@@ -724,12 +724,38 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
     classifier.load_state_dict(checkpoint["model"])
 
     # Load optimizer
-    optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
-    optim.load_state_dict(checkpoint["optim"])
+    if checkpoint.get("optim_type") != None:
+        optim = optims[checkpoint["optim_type"]](params=classifier.parameters(), lr=checkpoint["lr"])
+        optim.load_state_dict(checkpoint["optim"])
 
     # Model, structure (str), optimizer, features (optional)
     if return_features: return classifier, structure, optim, list(checkpoint["features"]), list(checkpoint["all_labels"])
     else: return classifier, structure, optim
+
+
+# Load model and return all the info about it
+def get_model_info(path: str) -> tuple[dict, str, list[str], str, float, dict]:
+    """Returns the model state dictionary, model structure, list of output classes, the 
+    features the model uses, optimizer type used in training, the learning rate from 
+    when it was saved, and the optimizer's state dictionary"""
+
+    # Load 'checkpoint' dict
+    try:
+        checkpoint = torch.load(path + "_nn.pt")
+    except:
+        print(f"Couldn't read {path}_nn.pt")
+        exit(1)
+
+    # Get all the info from the model checkpoint if it exists
+    model_sd = checkpoint.get("model")
+    structure = checkpoint.get("structue")
+    all_labels = checkpoint.get("all_labels")
+    features = checkpoint.get("features")
+    optim_type = checkpoint.get("optim_type")
+    lr = checkpoint.get("lr")
+    optim_sd = checkpoint.get("optim")
+    
+    return model_sd, structure, all_labels, features, optim_type, lr, optim_sd
 
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path: str, test_path: str, sorted_importances: dict[str, float], 
@@ -859,7 +885,7 @@ if __name__ == "__main__":
     # Arguments for tool
     arguments = parser.add_argument_group("Arguments")
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", default=None)
-    arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
+    arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", default=None)
     arguments.add_argument("-p", "--path", help="Path to save/load neural network", default="classifier")
     arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
     arguments.add_argument("-out", "--output", help="Path to output data as csv")
@@ -1024,7 +1050,14 @@ if __name__ == "__main__":
 
     elif info:
         # Load model and print info
-        _, structure, _, features, all_labels = load_model(path, return_features = True)
+        model_state, structure, all_labels, features, optim_type, lr, optim_state = get_model_info(path)
+
+        # Make len and .join() work for invalid models
+        if features == None: features = []
+        if all_labels == None: all_labels = []
+
+        # Print info for user
         print(f"Model at [{path}]'s structure is {structure}")
         print(f"It requires {len(features)} features: {', '.join(features)}") 
         print(f"It predicts {len(all_labels)} classes: {', '.join(all_labels)}") 
+        print(f"Optimizer used: {optim_type} Final learning rate: {lr}") 
