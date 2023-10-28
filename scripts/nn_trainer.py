@@ -82,7 +82,7 @@ for optim in optims:
                 model_performances = []
                 for test in range(tests):
                     path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{test}".replace(".",",") # EU style for UNIX machines
-                    model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), False)
+                    model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), True)
                     acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
                                               0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=True, patience=10000)
                     model_performances.append(acc)

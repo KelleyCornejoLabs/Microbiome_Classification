@@ -23,6 +23,19 @@ centroids = pd.read_csv("new_centroids_subCST.csv")
 lbls = centroids["sub_CST"].to_numpy()
 data = centroids.drop("sub_CST", axis=1).to_numpy().astype("float")
 
+X_train_centroids = np.concatenate((X_train, data))
+print("same?", not False in np.equal(X_train_centroids[-1:-14:-1], data[::-1]))
+
+hc = sklearn.cluster.AgglomerativeClustering(n_clusters=13)
+hc_predictions = hc.fit_predict(X_train_centroids)
+
+kmeans = sklearn.cluster.KMeans(n_clusters=13, n_init="auto")
+kmeans_predictions = kmeans.fit_predict(X_train)
+
+print(hc_predictions[-1:-14:-1], lbls)
+
+exit()
+
 clf = sklearn.neighbors.NearestCentroid()
 clf.fit(X_train, y_train)
 
@@ -82,8 +95,6 @@ plt.show()
 #s_preds = spectral.fit_predict(X_train)
 #print("\nSpectral")
 #score(X_train, s_preds)
-
-exit()
 
 kmean_cal_scores = []
 spectral_cal_scores = []

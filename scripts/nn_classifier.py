@@ -191,6 +191,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         for column in count_columns:
             normalized_train_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_train_data[column]))
             normalized_test_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_test_data[column]))
+
     elif norm == "tmm":
         if not cnrm:
             print("conorm package required for TMM normalization")
@@ -739,12 +740,12 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
         # This is for the case where the model has been converted from an older version of the program
         optim = None
 
-    if checkpoint.get("features") != None:
+    if checkpoint.get("features") is not None:
         features = list(checkpoint["features"])
     else:
         features = None
 
-    if checkpoint.get("all_labels") != None:
+    if checkpoint.get("all_labels") is not None:
         all_labels = list(checkpoint["all_labels"])
     else:
         all_labels = None
@@ -1060,7 +1061,7 @@ if __name__ == "__main__":
 
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
-                        load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove)
+                        load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
  
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
@@ -1074,8 +1075,8 @@ if __name__ == "__main__":
         model_state, structure, all_labels, features, optim_type, lr, optim_state = get_model_info(path)
 
         # Make len and .join() work for invalid models
-        if features == None: features = []
-        if all_labels == None: all_labels = []
+        if features is None: features = []
+        if all_labels is None: all_labels = []
 
         # Print info for user
         print(f"Model at [{path}]'s structure is {structure}")
