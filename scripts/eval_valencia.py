@@ -47,6 +47,7 @@ def plot_roc_curve(true_y, y_prob, lbls, method):
     plots the roc curve based of the probabilities
     """
 
+    # Make an ROC curve of each individual feature
     for i in range(len(lbls)):
         fpr, tpr, thresholds = roc_curve(true_y[:,i], y_prob[:,i])
         plt.plot(fpr, tpr)
@@ -55,6 +56,7 @@ def plot_roc_curve(true_y, y_prob, lbls, method):
 
     plt.title(f"ROC Curve of {method}")
     plt.legend(lbls)
+
     plt.savefig(f"ROC_{method}")
     if args.output == None: plt.show()
 
@@ -76,22 +78,35 @@ accuracy = (correct.count(True) / len(correct)) * 100
 
 print(f"Accuracy: {accuracy:.2f}%")
 
+# Get all lavels, in correct order
 all_lbls = list(set(input_data["HC_subCST"]))
 all_lbls.sort()
 
+# Create confusion matrix
 conf_mat = confusion_matrix(input_data["HC_subCST"], predictions["subCST"])
 disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_lbls)
 disp.plot()
 
+plt.title(f"Confusion matrix for {args.name}")
+
+plt.savefig(f"{args.output}")
 if args.output == None:
     plt.show()
-plt.savefig(f"{args.output}")
 
+#I love python
+#one_hot = lambda x:np.array([list(np.eye(len(all_lbls))[i if isinstance(i, int) else all_lbls.index(i)]) for i in x])
+
+# Helper function that converts a DataFrame to a list of one-hot encoded lists
 def one_hot (x):
     a = []
+
+    # For each sample
     for i in x:
+        # Convert string label to an index, and use it to create the one-hot vector
         a.append(list(np.eye(len(all_lbls))[i if isinstance(i, int) else all_lbls.index(i)]))
+
     print(np.array(a)[:,1])
     return np.array(a)
 
+# Plot the ROC curve
 plot_roc_curve(one_hot(input_data["HC_subCST"]), one_hot(predictions["subCST"]), all_lbls, args.name)
