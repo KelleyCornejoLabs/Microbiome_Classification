@@ -27,25 +27,25 @@ python $valencia_path -r $test_centroids -i $test_set_prepped_path -o $out_path_
 
 # Evaluate valencia
 echo "---Valencia---"
-python $valencia_eval_path -ip $out_path_valencia.csv -id $test_set_path --no-graph
+python $valencia_eval_path -ip $out_path_valencia.csv -id $test_set_path --no-graph -n VALENCIA
 
 # Evaluate neural classifier
 python $classifier_path -itr $train_set_path -ite $test_set_path -tm 3 -ts -p $model_path --no-debug
 python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path
 
 echo "---Neural---"
-python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph
+python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph -n "Neural Network"
 
 # Test simple version
 model_path+="_simplified"
 python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path
 
 echo "---Simple-Neural---"
-python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph
+python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph -n "Neural Network Simplified"
 
 # Evaluate random forest classifier
 python $forest_path --no-debug -itr $train_set_path -ite $test_set_path -o $out_path_forest.csv
 
 
 echo "---Random-Forest---"
-python $valencia_eval_path -ip $out_path_forest.csv -id $test_set_path --no-graph
+python $valencia_eval_path -ip $out_path_forest.csv -id $test_set_path --no-graph -n "Random forest"

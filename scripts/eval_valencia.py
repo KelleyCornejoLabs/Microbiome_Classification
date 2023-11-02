@@ -26,16 +26,37 @@ except:
     print("Required package argparse not available")
     exit()
 
+from sklearn.metrics import roc_curve
+import numpy as np
+
 # Outline args
 parser = argparse.ArgumentParser(description="Evaluate the acuracy of VALENCIA on given set")
 required = parser.add_argument_group("Required arguments")
 required.add_argument("-id", "--input-data", help="Path to file with data that VALENCIA was originally ran on",required=True)
 required.add_argument("-ip", "--input-predictions", help="Path to file with data that VALENCIA predicted",required=True)
 required.add_argument("-o","--output", help="Output report file prefix", default=None)
+required.add_argument("-n","--name", help="Name of classification method",)
 required.add_argument("-g","--graph", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
 
 # Parse arguments
 args = parser.parse_args()
+
+# ROC Curve
+def plot_roc_curve(true_y, y_prob, lbls, method):
+    """
+    plots the roc curve based of the probabilities
+    """
+
+    for i in range(len(lbls)):
+        fpr, tpr, thresholds = roc_curve(true_y[:,i], y_prob[:,i])
+        plt.plot(fpr, tpr)
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+
+    plt.title(f"ROC Curve of {method}")
+    plt.legend(lbls)
+    plt.savefig(f"ROC_{method}")
+    if args.output == None: plt.show()
 
 # Read data
 input_data = pd.read_csv(args.input_data)
@@ -64,5 +85,13 @@ disp.plot()
 
 if args.output == None:
     plt.show()
-else:
-    plt.savefig(f"{args.output}")
+plt.savefig(f"{args.output}")
+
+def one_hot (x):
+    a = []
+    for i in x:
+        a.append(list(np.eye(len(all_lbls))[i if isinstance(i, int) else all_lbls.index(i)]))
+    print(np.array(a)[:,1])
+    return np.array(a)
+
+plot_roc_curve(one_hot(input_data["HC_subCST"]), one_hot(predictions["subCST"]), all_lbls, args.name)
