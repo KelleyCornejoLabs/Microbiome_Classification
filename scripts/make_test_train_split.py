@@ -14,8 +14,17 @@ except:
 
 def load_file(path):
     # Read data
+    test_xlsx = path.endswith(".xlsx")
+    test_csv = path.endswith(".csv")
+
+    # Load and validate the input train data
     try:
-        data = pd.read_csv(path)
+        # Read appropriate file type
+        if test_csv: data = pd.read_csv(path)
+        elif test_xlsx: data = pd.read_excel(path)
+        else:
+            print("Unknown extension")
+            exit()
     except FileNotFoundError:
         print("Invalid path")
         exit(1)
@@ -97,7 +106,8 @@ def split(data, split, tolerance, labeled):
 
     # For unlabeled data no further processing required
     if not labeled:
-        train_count = round(split / 100)
+        train_count = round((split / 100) * len(data))
+        print(f"Train: {train_count}")
         return shuffle(data[:train_count]), shuffle(data[train_count:])
 
     # Found out what proportion of the data each CST makes. 

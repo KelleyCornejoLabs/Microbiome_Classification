@@ -88,16 +88,39 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         print("Test path required")
         exit()
 
-    # Load and validate the input data
+    # Find data format
+    train_xlsx = train_path.endswith(".xlsx")
+    train_csv = train_path.endswith(".csv")
+    test_xlsx = test_path.endswith(".xlsx")
+    test_csv = test_path.endswith(".csv")
+
+    # Load and validate the input train data
     try:
-        dftr = pd.read_csv(train_path)
+        # Read appropriate file type
+        if train_csv: dftr = pd.read_csv(train_path)
+        elif train_xlsx: dftr = pd.read_excel(train_path)
+        else:
+            # Print error and exit id unknown type
+            print(f"Unkown file format for train data {train_path}")
+            print("Known file formats are .xlsx and .csv")
+            exit()
     except FileNotFoundError:
+        # Error and exit if couldn't load
         print("Could not load input training data")
         exit()
 
+    # Load and validate the input test data
     try:
-        dfte = pd.read_csv(test_path)
+        # Read appropriate file type
+        if test_csv: dfte = pd.read_csv(test_path)
+        elif test_xlsx: dfte = pd.read_excel(test_path)
+        else:
+            # Print error and exit id unknown type
+            print(f"Unkown file format for test data {train_path}")
+            print("Known file formats are .xlsx and .csv")
+            exit()
     except FileNotFoundError:
+        # Error and exit if couldn't load
         print("Could not load input test data")
         exit()
 
