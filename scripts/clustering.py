@@ -11,14 +11,14 @@ import pandas as pd
 from nn_classifier import load_data
 import matplotlib.cm as cm
 
-X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns = load_data("nn_training_train.csv", "nn_training_test.csv", norm="none")
+X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns = load_data("../data/nn_training_train.csv", "../data/nn_training_test.csv", norm="other")
 
 print(X_train.shape)
 
 X_train = X_train.cpu().numpy().astype("float")
 y_train = y_train.cpu().argmax(dim=1).numpy().astype("float")
 
-centroids = pd.read_csv("new_centroids_subCST.csv")
+centroids = pd.read_csv("../../VALENCIA/CST_centroids_012920.csv")
 
 lbls = centroids["sub_CST"].to_numpy()
 data = centroids.drop("sub_CST", axis=1).to_numpy().astype("float")
@@ -30,9 +30,24 @@ hc = sklearn.cluster.AgglomerativeClustering(n_clusters=13)
 hc_predictions = hc.fit_predict(X_train_centroids)
 
 kmeans = sklearn.cluster.KMeans(n_clusters=13, n_init="auto")
-kmeans_predictions = kmeans.fit_predict(X_train)
+kmeans_predictions = kmeans.fit_predict(X_train_centroids)
 
-print(hc_predictions[-1:-14:-1], lbls)
+spectral = sklearn.cluster.SpectralClustering(n_clusters=13)
+#spectral_predictions = spectral.fit_predict(X_train_centroids)
+
+hdbscan = sklearn.cluster.HDBSCAN(min_cluster_size=100)
+hd_predictions = hdbscan.fit_predict(X_train_centroids)
+
+def print_info(data, c):
+    print(f"{c}: {data[-1:-14:-1]} {len(set(data[-1:-14:-1]))}")
+    print(f"Calinski (higher better): {sklearn.metrics.calinski_harabasz_score(X_train_centroids, data)}")
+    print(f"Davies (closer to 0 better): {sklearn.metrics.davies_bouldin_score(X_train_centroids, data)}")
+    print(f"Silhouette (higher better): {sklearn.metrics.silhouette_score(X_train_centroids, data)}")
+
+print_info(hc_predictions, "Heirarchical")
+print_info(kmeans_predictions, "Kmeans")
+#print_info(spectral_predictions, "spectral")
+print_info(hd_predictions, "HDBSCAN")
 
 exit()
 

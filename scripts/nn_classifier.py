@@ -45,6 +45,7 @@ except:
 try:
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
+    from matplotlib.colors import ListedColormap
     mpl = True
 except:
     print("Optional package matplotlib not available")
@@ -199,6 +200,14 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
 
         normalized_train_data = conorm.tmm(normalized_train_data.T).T
         normalized_test_data = conorm.tmm(normalized_test_data.T).T
+
+    elif norm == "other":
+        if not cnrm:
+            print("conorm package required for TMM normalization")
+            exit(1)
+
+        normalized_train_data = conorm.cpm(normalized_train_data.T).T
+        normalized_test_data = conorm.cpm(normalized_test_data.T).T
 
     # Format for neural net
     training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
@@ -596,17 +605,31 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
 
+colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
+    (91, 142, 197, 1),
+    (125, 197, 236, 1),
+    (59, 160, 142, 1),
+    (19, 108, 45, 1),
+    (143, 142, 45, 1),
+    (217, 187, 108, 1),
+    (91, 19, 0, 1),
+    (198, 91, 108, 1),
+    (161, 59, 91, 1),
+    (125, 31, 76, 1),
+    (160, 59, 142, 1),
+    (220, 20, 60, 1)]])
+
+
 # Store all data relating to data visualization and associated callbacks
 class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, colors, keys, labels):
+    def __init__(self, ax, fig, X_test, y_test, keys, labels):
         self.ax = ax
         self.fig = fig
         self.X_test = X_test
         self.y_test = y_test
-        self.colors = colors
         self.keys = keys
         self.labels = labels
         self.first_time = True
@@ -616,7 +639,7 @@ class Plotter:
 
         self.ax.clear()
 
-        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
+        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
         
         if self.first_time:
             self.fig.legend(s.legend_elements()[0], self.labels,
@@ -669,7 +692,7 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
     # Create subplot instance
     fig, ax = plt.subplots(figsize=(7,6))
 
-    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma, keys, all_labels) # Track plotting variables
+    plotter = Plotter(ax, fig, X_test, y_test, keys, all_labels) # Track plotting variables
     plotter.update_scatter()
 
     # Add buttons to the subplot

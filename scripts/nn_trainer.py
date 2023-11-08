@@ -102,7 +102,7 @@ with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"\nEpochs: {max_epochs}")
     f.write(f"\nBest performances for each setup: {performaces}")
     f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
-    f.write(f"\nTook: {math.floor(taken/60)}:{math.floor(taken/60)}:{round(taken%60)}")
+    f.write(f"\nTook: {math.floor(taken/60):02}:{math.floor((taken/60)%60):02}:{round(taken%60):02}")
 
 print(performaces)
 print(f"Best performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
