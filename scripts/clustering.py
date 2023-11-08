@@ -8,13 +8,18 @@ import sklearn.metrics
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from nn_classifier import load_data
+from nn_classifier import load_data, accuracy_test, load_model
 import matplotlib.cm as cm
+from sklearn.manifold import TSNE
+from umap import UMAP
+from sklearn.metrics import roc_auc_score, roc_curve
+import torch
 
 X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns = load_data("../data/nn_training_train.csv", "../data/nn_training_test.csv", norm="other")
 
 print(X_train.shape)
 
+X_train_torch = torch.clone(X_train)
 X_train = X_train.cpu().numpy().astype("float")
 y_train = y_train.cpu().argmax(dim=1).numpy().astype("float")
 
@@ -26,28 +31,66 @@ data = centroids.drop("sub_CST", axis=1).to_numpy().astype("float")
 X_train_centroids = np.concatenate((X_train, data))
 print("same?", not False in np.equal(X_train_centroids[-1:-14:-1], data[::-1]))
 
-hc = sklearn.cluster.AgglomerativeClustering(n_clusters=13)
-hc_predictions = hc.fit_predict(X_train_centroids)
-
 kmeans = sklearn.cluster.KMeans(n_clusters=13, n_init="auto")
-kmeans_predictions = kmeans.fit_predict(X_train_centroids)
-
 spectral = sklearn.cluster.SpectralClustering(n_clusters=13)
-#spectral_predictions = spectral.fit_predict(X_train_centroids)
+dbscan = sklearn.cluster.DBSCAN(eps=0.05)
+hdbscan = sklearn.cluster.HDBSCAN(min_cluster_size=5)
 
-hdbscan = sklearn.cluster.HDBSCAN(min_cluster_size=100)
-hd_predictions = hdbscan.fit_predict(X_train_centroids)
+y_km = kmeans.fit_predict(X_train)
+y_s = spectral.fit_predict(X_train)
+y_db = dbscan.fit_predict(X_train)
+y_hdb = hdbscan.fit_predict(X_train)
 
-def print_info(data, c):
-    print(f"{c}: {data[-1:-14:-1]} {len(set(data[-1:-14:-1]))}")
-    print(f"Calinski (higher better): {sklearn.metrics.calinski_harabasz_score(X_train_centroids, data)}")
-    print(f"Davies (closer to 0 better): {sklearn.metrics.davies_bouldin_score(X_train_centroids, data)}")
-    print(f"Silhouette (higher better): {sklearn.metrics.silhouette_score(X_train_centroids, data)}")
+#x_tsne = TSNE().fit_transform(X_train)
+#
+#x_umap = UMAP(metric='correlation').fit_transform(X_train)
 
-print_info(hc_predictions, "Heirarchical")
-print_info(kmeans_predictions, "Kmeans")
-#print_info(spectral_predictions, "spectral")
-print_info(hd_predictions, "HDBSCAN")
+def plot(y, lbls, method):
+    plt.figure(figsize=(10,10))
+    sc = plt.scatter(x_tsne[:, 0], x_tsne[:, 1], c=y)
+    if lbls != 0: plt.legend(handles=sc.legend_elements()[0], labels=lbls)
+    plt.title(f"t-SNE with {method} Labels")
+    #plt.savefig(f"t-sne_{method}_labels")
+    plt.show()
+    plt.figure(figsize=(10,10))
+    sc = plt.scatter(x_umap[:, 0], x_umap[:, 1], c=y)
+    if lbls != 0: plt.legend(handles=sc.legend_elements()[0], labels=lbls)
+    plt.title(f"UMAP with {method} Labels")
+    #plt.savefig(f"umap_{method}_labels")
+    plt.show()
+
+#plot(y_train, all_labels, "Valencia")
+#plot(y_km, range(13), "K-Means")
+#plot(y_s, range(13), "Spectral")
+#plot(y_db, 0, "DBSCAN")
+#plot(y_hdb, 0, "HDBSCAN")
+
+def plot_roc_curve(true_y, y_prob, method):
+    """
+    plots the roc curve based of the probabilities
+    """
+
+    for i in range(13):
+        fpr, tpr, thresholds = roc_curve(true_y[:,i], y_prob[:,i])
+        plt.plot(fpr, tpr)
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+
+    plt.title(f"ROC Curve of {method}")
+    plt.legend([all_labels[i] for i in range(13)])
+    plt.show()
+
+
+one_hot = lambda x: np.array([np.eye(13)[int(y)] for y in x])
+
+print(accuracy_test(one_hot(y_train), one_hot(y_km)))
+
+model, _, _ = load_model("classifier")
+
+with torch.inference_mode():
+    nn_out = model(X_train_torch).cpu().numpy().astype("float")
+
+plot_roc_curve(one_hot(y_train), nn_out, "Nerual Classifier")
 
 exit()
 

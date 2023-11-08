@@ -89,16 +89,39 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         print("Test path required")
         exit()
 
-    # Load and validate the input data
+    # Find data format
+    train_xlsx = train_path.endswith(".xlsx")
+    train_csv = train_path.endswith(".csv")
+    test_xlsx = test_path.endswith(".xlsx")
+    test_csv = test_path.endswith(".csv")
+
+    # Load and validate the input train data
     try:
-        dftr = pd.read_csv(train_path)
+        # Read appropriate file type
+        if train_csv: dftr = pd.read_csv(train_path)
+        elif train_xlsx: dftr = pd.read_excel(train_path)
+        else:
+            # Print error and exit id unknown type
+            print(f"Unkown file format for train data {train_path}")
+            print("Known file formats are .xlsx and .csv")
+            exit()
     except FileNotFoundError:
+        # Error and exit if couldn't load
         print("Could not load input training data")
         exit()
 
+    # Load and validate the input test data
     try:
-        dfte = pd.read_csv(test_path)
+        # Read appropriate file type
+        if test_csv: dfte = pd.read_csv(test_path)
+        elif test_xlsx: dfte = pd.read_excel(test_path)
+        else:
+            # Print error and exit id unknown type
+            print(f"Unkown file format for test data {train_path}")
+            print("Known file formats are .xlsx and .csv")
+            exit()
     except FileNotFoundError:
+        # Error and exit if couldn't load
         print("Could not load input test data")
         exit()
 
@@ -717,8 +740,9 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
 
 
 # Load model at path from the path_nn.pt
-def load_model(path: str, keys: None|list[str] = None, return_features: bool = False) -> \
-    tuple[nn.Sequential, str, torch.optim.Optimizer, list[str]|None, list[str]|None]:
+def load_model(path: str, keys: None|list[str] = None, return_features: bool = False, 
+               debug: bool = False) -> tuple[nn.Sequential, str, torch.optim.Optimizer, 
+                                             list[str]|None, list[str]|None]:
     """Load a model and return info about it. Returns [classifier, structure, optim
     features, classes]."""
 
@@ -853,7 +877,7 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
     rename_best(f"{path}_simplified", best_model_index, models)
 
     # Latest might not be best performer (which is what gets saved)
-    Sclassifier, _, _ = load_model(f"{path}_simplified")
+    Sclassifier, _, _ = load_model(f"{path}_simplified", debug=debug)
     return Sclassifier, SX_test, Sy_test, Sall_labels
 
 # Rename the best performing model to be generic, and get rid of the rest
@@ -1013,7 +1037,7 @@ if __name__ == "__main__":
         if continue_train:
             # Improve existing model
             if debug: print(f"Continuing to train {path + '_nn.pt'}")
-            classifier, structure, optim = load_model(path)
+            classifier, structure, optim = load_model(path, debug=debug)
             train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                   args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, 
                   optim=optim, patience=args.patience, debug=debug)
@@ -1037,7 +1061,7 @@ if __name__ == "__main__":
             rename_best(path, best_model, args.train_multiple)
             
         # Latest might not be best performer (which is what gets saved)
-        classifier, _, _ = load_model(path)
+        classifier, _, _ = load_model(path, debug=debug)
         
 
         # Evaluate the model and plot the correlations
@@ -1074,13 +1098,13 @@ if __name__ == "__main__":
         # TODO: Add model predictions to the file
         #print(list(features), list(data_features))
 
-        classifier, _, _, features, all_labels = load_model(path, return_features = True)
+        classifier, _, _, features, all_labels = load_model(path, return_features = True, debug=debug)
         classify_data(classifier, args.input_test, args.output, all_labels, features, labeled=labeled)
 
     elif test_accuracy:
         # Load model and data from supplied path
         if debug: print("Loading model")
-        classifier, _, _, features, _ = load_model(path, return_features = True)
+        classifier, _, _, features, _ = load_model(path, return_features = True, debug=debug)
 
         #print(features)
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
