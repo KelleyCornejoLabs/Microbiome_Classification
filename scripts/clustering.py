@@ -15,7 +15,7 @@ from umap import UMAP
 from sklearn.metrics import roc_auc_score, roc_curve
 import torch
 
-X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns = load_data("../data/nn_training_train.csv", "../data/nn_training_test.csv", norm="other")
+X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns = load_data("nn_training_train.csv", "nn_training_test.csv", norm="none")
 
 print(X_train.shape)
 
@@ -23,7 +23,7 @@ X_train_torch = torch.clone(X_train)
 X_train = X_train.cpu().numpy().astype("float")
 y_train = y_train.cpu().argmax(dim=1).numpy().astype("float")
 
-centroids = pd.read_csv("../../VALENCIA/CST_centroids_012920.csv")
+centroids = pd.read_csv("new_centroids_subCST.csv")
 
 lbls = centroids["sub_CST"].to_numpy()
 data = centroids.drop("sub_CST", axis=1).to_numpy().astype("float")
