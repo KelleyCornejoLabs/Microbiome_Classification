@@ -64,7 +64,10 @@ if device == "cuda":
 
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
-    
+
+# Put in alphabetical order so two datasets with same columns in different order works
+def reorder(df):
+    return df.reindex(sorted(df.columns), axis=1)
 
 # Normalize the data so its all the same
 def str_norm(x: str):
@@ -238,11 +241,13 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         normalized_train_data = conorm.tmm(normalized_train_data.T).T
         normalized_test_data = conorm.tmm(normalized_test_data.T).T
 
+    # Put in consistent order
+    normalized_test_data = reorder(normalized_test_data)
+    normalized_train_data = reorder(normalized_train_data)
+
     # Format for neural net
     training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
     testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).type(torch.float).to(device)
-
-    
 
     # Split training data into the train and test sets  
     if debug: print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
@@ -314,8 +319,15 @@ def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = 
     for column in count_columns:
         loaded[column] /= df["read_count"]
 
+    # Make column ordering consistent
+    loaded = reorder(loaded)
+
+    # Convert to tensor on the device
+    # NOTE: changed to loaded from loaded[count_columns]
+    loaded = torch.tensor(loaded.to_numpy()).type(torch.float).to(device)
+
     # Return as float tensor on device
-    return torch.tensor(loaded[count_columns].to_numpy()).type(torch.float).to(device), count_columns
+    return loaded, count_columns
     
 
 # Create a Neural Net 
