@@ -1040,7 +1040,7 @@ if __name__ == "__main__":
 
         # Set up model
         if continue_train:
-            # Improve existing model
+            # Improve existing model. Load it and train
             if debug: print(f"Continuing to train {path + '_nn.pt'}")
             classifier, structure, optim = load_model(path, debug=debug)
             train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
@@ -1049,6 +1049,7 @@ if __name__ == "__main__":
 
         elif load:
             if debug: print(f"Loading {path + '_nn.pt'}")
+            # Fall though, code immediately after this loads modelk from path regaurdless of choice
          
         else:
             # Train a model from scratch
@@ -1104,6 +1105,7 @@ if __name__ == "__main__":
         #print(list(features), list(data_features))
 
         classifier, _, _, features, all_labels = load_model(path, return_features = True, debug=debug)
+        print(f"Lbls:{all_labels}")
         classify_data(classifier, args.input_test, args.output, all_labels, features, labeled=labeled, debug=debug)
 
     elif test_accuracy:
