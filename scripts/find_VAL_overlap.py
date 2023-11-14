@@ -19,6 +19,7 @@ if __name__ == "__main__":
     
     # Read data
     val_data = pd.read_csv(args.input_valencia)
+    print("Read valencia data")
 
     path = args.input
 
@@ -37,6 +38,8 @@ if __name__ == "__main__":
     except FileNotFoundError:
         print("Invalid path")
         exit(1)
+
+    print("Read non-valencia data")
 
     columns = list(map(str_norm, data.columns))
     val_columns = list(map(str_norm, val_data.columns))

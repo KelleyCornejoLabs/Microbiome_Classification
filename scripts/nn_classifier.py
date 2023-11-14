@@ -64,6 +64,20 @@ if device == "cuda":
 
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
+    
+
+# Normalize the data so its all the same
+def str_norm(x: str):
+    prefixes = ["g_", "o_", "k_", "f_", "d_", "c_"]
+
+    x = x.lower().replace(' ', '_')
+
+    # Remove any prefix
+    if x[1] == '_':
+        x = x[2:]
+
+    # Return lower_camel_case
+    return x
 
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = [], 
@@ -185,9 +199,10 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     # Get columns to normalize, remove if not to be kept
     count_columns = normalized_train_data.columns
 
+    # TODO: redo keep
     if keep != None:
         for col in count_columns:
-            if not col in keep:
+            if not str_norm(col) in keep:
                 normalized_test_data = normalized_test_data.drop(columns=[col])
                 normalized_train_data = normalized_train_data.drop(columns=[col])
 
@@ -272,14 +287,16 @@ def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = 
     # Only keep columns requested 
     if keep != None:
         # Drop all non-requested columns
-        for col in list(df.columns):
-            if not col in keep:
+        for col in df.columns:
+            if not str_norm(col) in list(map(str_norm, keep)):
                 if debug: print(f"Dropping {col}")
                 drop += [col]
             else:
                 if debug: print("KEEP", col)
 
-    # Drop columns if required=
+    print(f"Dropping {drop}")
+
+    # Drop columns if required
     if drop != []:
         loaded = df
         for col in drop:
@@ -812,7 +829,7 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
                         torch.Tensor, list[str]]:
     """Train a simpler model using the given settings and return the best model. Columns used are 
     the entries in sorted_importances are greater than importance_threashold"""
-    
+
     # Determine columns to cut
     if focus == None:
         unimportant_cols = [key for key, value in sorted_importances.items() if value < imporatance_threshold]
@@ -876,12 +893,14 @@ def rename_best (path: str, best: int, models: int):
 
 # Classify the samples in this file and add the classification to the output file
 def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[str], 
-                   features: list[str], drop: list[str] = [], labeled: bool = True):
+                   features: list[str], drop: list[str] = [], labeled: bool = True, debug: bool = False):
     """Read the file from path and use the model to classify it. Copy the data and the 
     classificaitons to the output file"""
 
+    print("AAA")
     # Load unlabeled data for the columns used by model
-    data, count_cols = load_unlabeled(path, keep=features)
+    data, count_cols = load_unlabeled(path, keep=features, debug=debug)
+    print(f"Count cols: {count_cols}")
 
     # Get predictions
     model.eval()
@@ -908,20 +927,6 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
 
     file.to_csv(f"{out}.csv", index=False)
     print(f"Output: {out}.csv")
-    
-
-# Normalize the data so its all the same
-def str_norm(x: str):
-    prefixes = ["g_", "o_", "k_", "f_", "d_", "c_"]
-
-    x = x.lower().replace(' ', '_')
-
-    # Remove any prefix
-    if x[1] == '_':
-        x = x[2:]
-
-    # Return lower_camel_case
-    return x
 
 # Return all the columns requested from data in order
 # TODO
@@ -1003,17 +1008,17 @@ if __name__ == "__main__":
     if test_accuracy: train_model = False
     if classify: train_model = False
     if info: train_model = False
-
+    
     if train_model:
         if args.input_train == None:
             print("Input Train required for training")
             exit(1)
 
-        # Load data from supplied path
-        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
-                                                                                           args.input_test, 
-                                                                                           debug=debug, norm=norm_fn,
-                                                                                           regex_remove=regex_remove)
+            # Load data from supplied path
+            X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
+                                                                                       args.input_test, 
+                                                                                       debug=debug, norm=norm_fn,
+                                                                                       regex_remove=regex_remove)
 
         # Determine hidden neurons as (2/3)*input + output
         if args.hidden_neurons == None:
@@ -1088,7 +1093,7 @@ if __name__ == "__main__":
         #print(list(features), list(data_features))
 
         classifier, _, _, features, all_labels = load_model(path, return_features = True, debug=debug)
-        classify_data(classifier, args.input_test, args.output, all_labels, features, labeled=labeled)
+        classify_data(classifier, args.input_test, args.output, all_labels, features, labeled=labeled, debug=debug)
 
     elif test_accuracy:
         # Load model and data from supplied path
