@@ -909,7 +909,6 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
     """Read the file from path and use the model to classify it. Copy the data and the 
     classificaitons to the output file"""
 
-    print("AAA")
     # Load unlabeled data for the columns used by model
     data, count_cols = load_unlabeled(path, keep=features, debug=debug)
     print(f"Count cols: {count_cols}")
@@ -1026,8 +1025,8 @@ if __name__ == "__main__":
             print("Input Train required for training")
             exit(1)
 
-            # Load data from supplied path
-            X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
+        # Load data from supplied path
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
                                                                                        args.input_test, 
                                                                                        debug=debug, norm=norm_fn,
                                                                                        regex_remove=regex_remove)
