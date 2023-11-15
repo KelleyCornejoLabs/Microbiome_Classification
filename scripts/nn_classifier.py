@@ -82,6 +82,161 @@ def str_norm(x: str):
     # Return lower_camel_case
     return x
 
+# Load one file to tensor
+def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [], 
+              keep: None|list[str] = None, debug: bool = False, 
+              norm: str = "none", regex_remove: list[str] = [''],) -> \
+              tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
+    ""
+
+    if path == None:
+        print("Data path required")
+        exit()
+
+    # Find data format
+    fmt_xlsx = path.endswith(".xlsx")
+    fmt_csv = path.endswith(".csv")
+
+    # Load and validate the input data
+    try:
+        # Read appropriate file type
+        if fmt_csv: df = pd.read_csv(path)
+        elif fmt_xlsx: df = pd.read_excel(path)
+        else:
+            # Print error and exit if unknown type
+            print(f"ERR: Unkown file format for data {path}")
+            print("Known file formats are .xlsx and .csv")
+            exit()
+    except FileNotFoundError:
+        # Error and exit if couldn't load
+        print("ERR: Could not load input data")
+        exit()
+
+    # Chek if data is labeled
+    labeled = "HC_subCST" in list(df.keys())
+    if debug: print(f"DBG: Data is {' not' if not labeled else ''}labeled")
+
+    # Other required keys
+    required_keys = ["sampleID", "read_count"]
+    
+    # Exit if wrong type of data found
+    if expect_labeled != labeled:
+        # Exit if expected labels not found
+        if expect_labeled == True:
+            print(f"ERR: Expected labeled data, found unlabeled")
+            exit(1)
+
+        # If unexpected labels, ignore them
+        print("WARN: Labels found but unlabeled data requested. Ignoring labels")
+        labeled = False
+
+        # Add HC_subCST to the keys that will be dropped
+        required_keys.append("HC_subCST")
+
+
+    # Check for required keys
+    for key in required_keys:
+        if not key in list(df.keys()):
+            print(f"ERR: Requred key {key} not found in data.")
+            exit(1)
+
+    # Drop columns for simplified model
+    ignore = False
+    if drop != []:
+        for col in drop:
+            try:
+                df = df.drop(columns=[col])
+            except KeyError:
+                print(f"WARN: Failed to drop {col} from dataset")
+
+    # If this is labeled data, 
+    if labeled:
+        # Get the superset of all possible classifications
+        all_labels = sorted(list(set(df["HC_subCST"])))
+
+        # Create function to convert string names to a one-hot vector
+        lbl_to_i = lambda lbl: np.eye(len(all_labels))[all_labels.index(lbl)]
+        
+        # Make np array of one-hot encoded vectors, convert to cuda(?) tensors
+        labels = np.array([lbl_to_i(x) for x in list(df["HC_subCST"])])
+        labels = torch.tensor(labels).to(device).type(torch.float)
+
+        # Found out what proportion of the data each CST makes
+        entries = df.groupby(["HC_subCST"]).count()["sampleID"]
+
+        # TODO: Test this with more metrics. It will affect how the model learns rarer classes <---- Look more into IV-C4
+        # TODO: Try different measures of prevelance. Giving rarer classes such a bigger importance will
+        # impact the accuracy of more common classes a lot
+
+        # Return normalized pervelance stats for the data, for weighting SGD
+        ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
+        ordered_prevelence *= 1/ordered_prevelence.min()
+
+        # Add HC_subCST to the keys that will be dropped
+        required_keys.append("HC_subCST")
+
+    # Drop the required keys, assign new df to normalized variable
+    normalized_data = df.drop(columns=required_keys)
+
+    # Get columns that contain count data
+    count_columns = normalized_data.columns
+
+    # If columns are explicitly provided to be kept
+    if keep != None:
+        # Normalize all column names to be kept
+        keep = list(map(str_norm, keep))
+
+        # Check each column
+        for col in count_columns:
+            if not str_norm(col) in keep:
+                # If we find a string that shouldn't be kept, attempt to drop
+                try: 
+                    normalized_data = normalized_data.drop(col)
+                except KeyError:
+                    print(f"ERR: Column {col} not found to drop")
+                    exit(1)
+
+
+    # Allow removal of elements by regex. If regexes provided,
+    if regex_remove != ['']:
+        # Attempt to remove all of them
+        for regex in regex_remove:
+            # Use regex to select columns
+            to_remove = list(normalized_data.filter(regex=regex))
+            if debug: print(f"DBG: Removing from regex {regex}: {', '.join(to_remove)}")
+
+            # Only allow columns not selected
+            normalized_data = normalized_data[normalized_data.columns.drop(to_remove)]
+
+    # Get columns that contain count data which remain after pruning
+    count_columns = normalized_data.columns
+
+    # Normalize the columns based on count data to adjust for sample 'quality'
+    for column in count_columns:
+        normalized_data[column] /= df["read_count"]
+
+    # Perform the requested normalizations
+    if norm == "log":
+        for column in count_columns:
+            normalized_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_data[column]))
+
+    elif norm == "tmm":
+        if not cnrm:
+            print("ERR: Conorm package required for TMM normalization")
+            exit(1)
+
+        normalized_data = conorm.tmm(normalized_data.T).T
+
+    # Order consistently
+    normalized_data = reorder(normalized_data)
+
+    # Format for neural net as cuda(?) float tensor
+    data = torch.tensor(normalized_data[count_columns].to_numpy()).type(torch.float).to(device)
+
+    # Return data and information about it
+    if labeled: return data, labels, all_labels, ordered_prevelence, count_columns
+    else: return data, count_columns
+
 # Load data for training and validation from paths to csv test and training data files
 def load_data(train_path: str, test_path: str, drop: None|list[str] = [], 
               keep : None|list[str] = None, debug:bool = False, norm:str = "none",
@@ -95,186 +250,39 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     the column names of those containing input data. Drop drops the rows provided as strigns in a list, 
     Keep keeps the rows provided as a list of strings if they exist."""
 
-    # TODO: Normalize from calculated totals not total row
+    # Load training data
+    X_train, y_train, all_labels_train, ordered_prevelence, count_columns_train = \
+                load_file(train_path, True, drop, keep, debug, norm, regex_remove)
+    
+    # Load testing data
+    X_test, y_test, all_labels_test, _, count_columns_test = \
+                load_file(train_path, True, drop, keep, debug, norm, regex_remove)
+    
+    # Function to find differences in count coluns/labels
+    def find_different (train, test):
+        return [(i,j) for i, j in zip(train, test) if i != j]
 
-    if train_path == None:
-        print("Train path required")
-        exit()
+    # Detect if cound columns are different after loading/processing, warn user if they are
+    different_cols = find_different(count_columns_train, count_columns_test)
+    if len(different_cols) != 0:
+        print("ERR: Training and test set do not contain same count columns, or they are not in the same order")
+        print(f"Found {len(different_cols)} (after pre-processing): {''.join(different_cols)}")
+        exit(2)
 
-    if test_path == None:
-        print("Test path required")
-        exit()
+    # Detect if cound columns are different after loading/processing, warn user if they are
+    different_lbls = find_different(all_labels_train, all_labels_test)
+    if len(different_lbls) != 0:
+        print("ERR: Training and test set do not contain same labels, or they are not in the same order")
+        print(f"Found {len(different_lbls)} (after pre-processing): {''.join(different_lbls)}")
+        exit(2)
 
-    # Find data format
-    train_xlsx = train_path.endswith(".xlsx")
-    train_csv = train_path.endswith(".csv")
-    test_xlsx = test_path.endswith(".xlsx")
-    test_csv = test_path.endswith(".csv")
+   
+    # Print debug info for user
+    if debug: print(f"DBG: Training split: {len(X_train)}, Testing split: {len(X_test)}")
+    if debug: print(f"DBG: Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
+    if debug: print(f"DBG: First 5 labels of train: {', '.join(map(lambda i:all_labels_train[i.argmax()], y_train[:5]))}")
 
-    # Load and validate the input train data
-    try:
-        # Read appropriate file type
-        if train_csv: dftr = pd.read_csv(train_path)
-        elif train_xlsx: dftr = pd.read_excel(train_path)
-        else:
-            # Print error and exit id unknown type
-            print(f"Unkown file format for train data {train_path}")
-            print("Known file formats are .xlsx and .csv")
-            exit()
-    except FileNotFoundError:
-        # Error and exit if couldn't load
-        print("Could not load input training data")
-        exit()
-
-    # Load and validate the input test data
-    try:
-        # Read appropriate file type
-        if test_csv: dfte = pd.read_csv(test_path)
-        elif test_xlsx: dfte = pd.read_excel(test_path)
-        else:
-            # Print error and exit id unknown type
-            print(f"Unkown file format for test data {train_path}")
-            print("Known file formats are .xlsx and .csv")
-            exit()
-    except FileNotFoundError:
-        # Error and exit if couldn't load
-        print("Could not load input test data")
-        exit()
-
-    def check_keys(df_keys, in_type):
-        if False in [(key in df_keys) for key in ["sampleID", "read_count", "HC_subCST"]]:
-            print(f"{in_type} input does not contain sampleID, read_count, or HC_subCST")
-            exit()
-
-    check_keys(list(dftr.keys()), "Training")
-    check_keys(list(dfte.keys()), "Testing")
-
-    # Drop columns for simplified model
-    ignore = False
-    if drop != []:
-        for col in drop:
-            try:
-                dftr = dftr.drop(columns=[col])
-            except KeyError:
-                print(f"Failed to drop {col} from training set")
-                if not ignore:
-                    ignore = bool(input("Continue anyways?"))
-                    if ignore: continue
-                    exit()
-
-            try:
-                dfte = dfte.drop(columns=[col])
-            except KeyError:
-                print(f"Failed to drop {col} from test set")
-                if not ignore:
-                    ignore = bool(input("Continue anyways?"))
-                    if ignore: continue
-                    exit()
-
-    # Create helper functions for formatting CST 'labels' for the neural network
-    if set(dftr["HC_subCST"]) != set(dfte["HC_subCST"]):
-        print("Training and test set do not contain same CSTs")
-        exit()
-
-    # Sort to standardize data loading
-    all_labels = sorted(list(set(dftr["HC_subCST"])))
-
-    # Encode and decode labels as one-hot vector corresponding to their index in all_labels
-    def i_to_lbl(i):
-        return all_labels[i.argmax()]
-
-    def lbl_to_i(lbl):
-        return np.eye(len(all_labels))[all_labels.index(lbl)]
-
-    # Generate label data
-    test_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dfte["HC_subCST"])])).to(device).type(torch.float)
-    train_labels = torch.tensor(np.array([lbl_to_i(x) for x in list(dftr["HC_subCST"])])).to(device).type(torch.float)
-
-    # Create normalized the data so each sample is proportional
-    normalized_train_data = dftr.drop(columns=["sampleID", "read_count", "HC_subCST"])
-    normalized_test_data = dfte.drop(columns=["sampleID", "read_count", "HC_subCST"])
-
-    if len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ]) != 0:
-        print("Training and test set do not contain same count columns, or they are not in the same order")
-        print(f"Found: {len([(i,j) for i, j in zip(normalized_test_data.columns, normalized_train_data.columns) if i != j ])}")
-        exit()
-
-    # Get columns to normalize, remove if not to be kept
-    count_columns = normalized_train_data.columns
-
-    # TODO: redo keep
-    if keep != None:
-        for col in count_columns:
-            if not str_norm(col) in keep:
-                normalized_test_data = normalized_test_data.drop(columns=[col])
-                normalized_train_data = normalized_train_data.drop(columns=[col])
-
-
-    # TODO: Regex to remove g_*
-    if regex_remove != ['']:
-        for regex in regex_remove:
-            print(f"Removing from regex {regex}: {', '.join(list(normalized_train_data.filter(regex=regex)))}")
-            normalized_train_data = normalized_train_data[normalized_train_data.columns.drop(list(normalized_train_data.filter(regex=regex)))]
-            normalized_test_data = normalized_test_data[normalized_test_data.columns.drop(list(normalized_test_data.filter(regex=regex)))]
-
-    # TODO: Handle if two files have same columns in different order?
-
-    # Get columns to normalize, remove if not to be kept
-    count_columns = normalized_train_data.columns
-
-    # Normalize the columns based on count data
-    # Adjust for sample "quality" always
-    for column in count_columns:
-        normalized_train_data[column] /= dftr["read_count"]
-        normalized_test_data[column] /= dfte["read_count"]
-
-    if norm == "log":
-        for column in count_columns:
-            normalized_train_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_train_data[column]))
-            normalized_test_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_test_data[column]))
-
-    elif norm == "tmm":
-        if not cnrm:
-            print("conorm package required for TMM normalization")
-            exit(1)
-
-        normalized_train_data = conorm.tmm(normalized_train_data.T).T
-        normalized_test_data = conorm.tmm(normalized_test_data.T).T
-
-    # Put in consistent order
-    normalized_test_data = reorder(normalized_test_data)
-    normalized_train_data = reorder(normalized_train_data)
-
-    # Format for neural net
-    training_data = torch.tensor(normalized_train_data[count_columns].to_numpy()).type(torch.float).to(device)
-    testing_data = torch.tensor(normalized_test_data[count_columns].to_numpy()).type(torch.float).to(device)
-
-    # Split training data into the train and test sets  
-    if debug: print(f"Training split: {len(training_data)}, Testing split: {len(testing_data)}")
-
-    X_train, y_train = training_data, train_labels
-    X_test, y_test = testing_data, test_labels
-
-    # if split:
-    #     print("Training on all given data. No data will be reserved for metrics")
-    #     X_test = X_train
-    #     y_test = y_train
-
-    if debug: print(f"Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
-
-    if debug: print(f"First 5 labels of train: {', '.join(map(i_to_lbl, y_train[:5]))}")
-
-    # Found out what proportion of the data each CST makes
-    entries = dftr.groupby(["HC_subCST"]).count()["sampleID"]
-
-    # TODO: Test this with more metrics. It will affect how the model learns rarer classes <---- Look more into IV-C4
-    # TODO: Try different measures of prevelance. Giving rarer classes such a bigger importance will
-    # impact the accuracy of more common classes a lot
-    # Get in order of what index each label is in training data
-    ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
-    ordered_prevelence *= 1/ordered_prevelence.min()
-
-    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns
+    return X_train, y_train, X_test, y_test, all_labels_train, ordered_prevelence, count_columns_train
 
 # Load unlabeled data for classification by model
 def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = None, 
@@ -282,52 +290,10 @@ def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = 
     """Load data without labels to be fed to model for classification. A list of column names
     to explicity keep (drop everything else) or provide a list of column names to drop"""
 
-    # Read file
-    try:
-        df = pd.read_csv(path)
-    except FileNotFoundError:
-        print(f"Couldn't find file at path '{path}'")
-        exit(1)
+    # TODO: forward normalization and regex
 
-    # Only keep columns requested 
-    if keep != None:
-        # Drop all non-requested columns
-        for col in df.columns:
-            if not str_norm(col) in list(map(str_norm, keep)):
-                if debug: print(f"Dropping {col}")
-                drop += [col]
-            else:
-                if debug: print("KEEP", col)
-
-    print(f"Dropping {drop}")
-
-    # Drop columns if required
-    if drop != []:
-        loaded = df
-        for col in drop:
-            try:
-                loaded = loaded.drop(columns=[col])
-            except ValueError:
-                print(f"Failed to drop {col} from training set")
-                exit()
-    else:
-        # Don't feed ID and read counts to net. Removed previously if keep
-        loaded = df.drop(columns=["sampleID", "read_count"])
-
-    # Normalize
-    count_columns = loaded.columns
-    for column in count_columns:
-        loaded[column] /= df["read_count"]
-
-    # Make column ordering consistent
-    loaded = reorder(loaded)
-
-    # Convert to tensor on the device
-    # NOTE: changed to loaded from loaded[count_columns]
-    loaded = torch.tensor(loaded.to_numpy()).type(torch.float).to(device)
-
-    # Return as float tensor on device
-    return loaded, count_columns
+    # load_unlabeled is kind of obsolete now...
+    return load_file(path, False, drop, keep, debug)
     
 
 # Create a Neural Net 
@@ -1026,8 +992,7 @@ if __name__ == "__main__":
             exit(1)
 
         # Load data from supplied path
-        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, 
-                                                                                       args.input_test, 
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test,
                                                                                        debug=debug, norm=norm_fn,
                                                                                        regex_remove=regex_remove)
 
