@@ -189,9 +189,10 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
         # Check each column
         for col in count_columns:
             if not str_norm(col) in keep:
+                print(f"Dropping: {col}")
                 # If we find a string that shouldn't be kept, attempt to drop
                 try: 
-                    normalized_data = normalized_data.drop(col)
+                    normalized_data = normalized_data.drop(columns=[col])
                 except KeyError:
                     print(f"ERR: Column {col} not found to drop")
                     exit(1)
@@ -810,6 +811,7 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
 
     # Determine columns to cut
     if focus == None:
+        if debug: print("DBG: Determining columns to ignore manually")
         unimportant_cols = [key for key, value in sorted_importances.items() if value < imporatance_threshold]
         
         # Determine new data containing the Significant columns
@@ -818,6 +820,7 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
                                                                                                   debug=debug, norm=norm,
                                                                                                   regex_remove=regex_remove)
     else: # Or manually keep columns
+        if debug: print("DBG: Focusing on provided columns")
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
                                                                                                   keep=focus, debug=debug, 
                                                                                                   norm=norm, 
