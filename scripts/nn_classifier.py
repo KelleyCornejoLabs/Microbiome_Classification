@@ -45,6 +45,7 @@ except:
 try:
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
+    from matplotlib.colors import ListedColormap
     mpl = True
 except:
     print("Optional package matplotlib not available")
@@ -87,7 +88,11 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
               keep: None|list[str] = None, debug: bool = False, 
               norm: str = "none", regex_remove: list[str] = [''],) -> \
               tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
-    ""
+    """Loads classified or unclassified data. Dropping columns in drop, only keeping columns 
+    in keep, or removing columns according to a regex (if they are supplied). Will only return
+    data type specified, removing labels from labeled data if unlabeled data is requested. 
+    Returns (data, count_columns) if unlabeled data is requested, and (data, labels, all_labels,
+    ordered_prevelence, count_columns) if labeled data requested."""
 
     if path == None:
         print("Data path required")
@@ -189,7 +194,7 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
         # Check each column
         for col in count_columns:
             if not str_norm(col) in keep:
-                print(f"Dropping: {col}")
+                if debug: print(f"DBG: Dropping: {col}")
                 # If we find a string that shouldn't be kept, attempt to drop
                 try: 
                     normalized_data = normalized_data.drop(columns=[col])
@@ -232,7 +237,10 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
     normalized_data = reorder(normalized_data)
 
     # Format for neural net as cuda(?) float tensor
-    data = torch.tensor(normalized_data[count_columns].to_numpy()).type(torch.float).to(device)
+    data = torch.tensor(normalized_data.to_numpy()).type(torch.float).to(device)
+
+    # Get updated count columns in correct order
+    count_columns = normalized_data.columns
 
     # Return data and information about it
     if labeled: return data, labels, all_labels, ordered_prevelence, count_columns
@@ -257,7 +265,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     
     # Load testing data
     X_test, y_test, all_labels_test, _, count_columns_test = \
-                load_file(train_path, True, drop, keep, debug, norm, regex_remove)
+                load_file(test_path, True, drop, keep, debug, norm, regex_remove)
     
     # Function to find differences in count coluns/labels
     def find_different (train, test):
@@ -457,7 +465,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
     # NOTE: Use a different lr_scheduler for SGD
     #if optim_type != "sgd":
     if patience != 0:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.1, patience=patience, verbose=debug)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.2, patience=patience, verbose=debug)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -615,17 +623,30 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
 
+colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
+    (91, 142, 197, 1),
+    (125, 197, 236, 1),
+    (59, 160, 142, 1),
+    (19, 108, 45, 1),
+    (143, 142, 45, 1),
+    (217, 187, 108, 1),
+    (91, 19, 0, 1),
+    (198, 91, 108, 1),
+    (161, 59, 91, 1),
+    (125, 31, 76, 1),
+    (160, 59, 142, 1),
+    (220, 20, 60, 1)]])
+
 # Store all data relating to data visualization and associated callbacks
 class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, colors, keys, labels):
+    def __init__(self, ax, fig, X_test, y_test, keys, labels):
         self.ax = ax
         self.fig = fig
         self.X_test = X_test
         self.y_test = y_test
-        self.colors = colors
         self.keys = keys
         self.labels = labels
         self.first_time = True
@@ -635,7 +656,7 @@ class Plotter:
 
         self.ax.clear()
 
-        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=plt.cm.plasma)
+        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
         
         if self.first_time:
             self.fig.legend(s.legend_elements()[0], self.labels,
@@ -688,7 +709,7 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
     # Create subplot instance
     fig, ax = plt.subplots(figsize=(7,6))
 
-    plotter = Plotter(ax, fig, X_test, y_test, plt.cm.plasma, keys, all_labels) # Track plotting variables
+    plotter = Plotter(ax, fig, X_test, y_test, keys, all_labels) # Track plotting variables
     plotter.update_scatter()
 
     # Add buttons to the subplot
@@ -991,7 +1012,7 @@ if __name__ == "__main__":
     
     if train_model:
         if args.input_train == None:
-            print("Input Train required for training")
+            print("ERR: Input Train required for training")
             exit(1)
 
         # Load data from supplied path
@@ -1002,9 +1023,9 @@ if __name__ == "__main__":
         # Determine hidden neurons as (2/3)*input + output
         if args.hidden_neurons == None:
             hidden = int(round(len(X_train[0]) * (2/3) + len(y_train[0])))
-            if debug: print(f"Using {hidden} hidden layers")
+            if debug: print(f"DBG: Using {hidden} hidden layers")
         else:
-            hidden = args.hidden_layers
+            hidden = args.hidden_neurons
 
         # Set up model
         if continue_train:
