@@ -68,7 +68,7 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Put in alphabetical order so two datasets with same columns in different order works
 def reorder(df):
-    return df.reindex(sorted(df.columns), axis=1)
+    return df.reindex(sorted(df.columns, key=str_norm), axis=1)
 
 # Normalize the data so its all the same
 def str_norm(x: str):
@@ -233,14 +233,16 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
 
         normalized_data = conorm.tmm(normalized_data.T).T
 
-    # Order consistently
-    normalized_data = reorder(normalized_data)
 
     # Format for neural net as cuda(?) float tensor
     data = torch.tensor(normalized_data.to_numpy()).type(torch.float).to(device)
 
+    # Order consistently
+    normalized_data = reorder(normalized_data)
+
     # Get updated count columns in correct order
     count_columns = normalized_data.columns
+    if debug: print(f"DBG: count_columns: {', '.join(count_columns)}")
 
     # Return data and information about it
     if labeled: return data, labels, all_labels, ordered_prevelence, count_columns
@@ -301,8 +303,27 @@ def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = 
 
     # TODO: forward normalization and regex
 
+    # Make sure colukmns we are dropping are sorted in order
+    keep = sorted(list(map(str_norm, keep)))
+
     # load_unlabeled is kind of obsolete now...
-    return load_file(path, False, drop, keep, debug)
+    data, count_cols = load_file(path, False, drop, keep, debug)
+
+    # Function to find differences in count column labels
+    def find_different (set_a, set_b):
+        return [(i,j) for i, j in zip(set_a, set_b) if i != j]
+
+    #     
+    if keep != None:
+        diff = find_different(list(map(str_norm, count_cols)), list(map(str_norm, keep)))
+
+        # If there is a difference
+        if diff != []:
+            print("ERR: Difference between columns in file and in model. Different cols:")
+            print(", ".join(map(lambda x:f"{x[0]}:{x[1]}", diff)))
+            exit()
+
+    return data, count_cols
     
 
 # Create a Neural Net 
