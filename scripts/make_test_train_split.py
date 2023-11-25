@@ -199,13 +199,10 @@ def transpose_data(data):
     data = data.drop(index=0, axis=0)
     return data
 
-def rename_cols_to_taxid(data: pd.DataFrame, nd_cols: list[str]) -> pd.DataFrame:
+def rename_cols_to_taxid(data: pd.DataFrame) -> pd.DataFrame:
     if not NCBI:
         print("Package ete3 required to lookup NCBI taxids")
         exit(1)
-
-    # TODO: make sure this doesn't apply to any non-data columns
-    print(nd_cols)
 
     # Put in order, and normalize all names
     data = reorder(data)
@@ -222,7 +219,7 @@ def rename_cols_to_taxid(data: pd.DataFrame, nd_cols: list[str]) -> pd.DataFrame
     untranslatable_cols = all_cols - translatable_cols
     
     # Non-data columns are not subject to translation
-    untranslatable_cols = untranslatable_cols - set(map(str_norm, nd_cols))
+    untranslatable_cols = untranslatable_cols - set(map(str_norm, ["read_count", "sampleid"]))
 
     # Drop any columns that couldn't be turned into taxids
     if untranslatable_cols != set([]):
@@ -233,7 +230,6 @@ def rename_cols_to_taxid(data: pd.DataFrame, nd_cols: list[str]) -> pd.DataFrame
         data = data.drop(columns=untranslatable_cols)
 
     # Rename columns to taxids, and sort in acending order (treating all entries as strings)
-    print(taxids)
     data = data.rename(columns=taxids)
     data = data.reindex(sorted(list(data.columns), key=str), axis=1)
     return data
@@ -300,9 +296,11 @@ if __name__ == "__main__":
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
     train_set, test_set = split(data, train_split, tolerance, labeled)
 
+    print(data.head(), read_count_col, sample_id_col)
+
     # Convert column names from bacteria to taxids
     if convert_taxid:
-        train_set = rename_cols_to_taxid(train_set, non_data + [read_count_col] + [sample_id_col] + [label_col])
-        test_set = rename_cols_to_taxid(test_set, non_data + [read_count_col] + [sample_id_col] + [label_col])
+        train_set = rename_cols_to_taxid(train_set)
+        test_set = rename_cols_to_taxid(test_set)
 
     write(train_set, test_set, args.output)
