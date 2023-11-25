@@ -38,6 +38,21 @@ def load_file(path):
         exit(1)
     return data
 
+# Put in alphabetical order so two datasets with same columns in different order works
+def reorder(df):
+    return df.reindex(sorted(df.columns, key=str_norm), axis=1)
+
+# Normalize the data so its all the same
+def str_norm(x: str):
+    x = x.lower().replace('_', ' ')
+
+    # Remove any prefix
+    if x[1] == ' ':
+        x = x[2:]
+
+    # Return lower case
+    return x
+
 # For naming consistency with VALENCIA
 def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_number_for_SRA', label_col="HC_subCST", 
                 non_data=['Val_CST', 'Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim', 'IV-A_sim','IV-B_sim',
@@ -184,10 +199,44 @@ def transpose_data(data):
     data = data.drop(index=0, axis=0)
     return data
 
-def rename_cols_to_taxid(data: pd.DataFrame) -> pd.DataFrame:
-    print("TODO: Unimplemented")
-    __import__("sys").exit()
-    return
+def rename_cols_to_taxid(data: pd.DataFrame, nd_cols: list[str]) -> pd.DataFrame:
+    if not NCBI:
+        print("Package ete3 required to lookup NCBI taxids")
+        exit(1)
+
+    # TODO: make sure this doesn't apply to any non-data columns
+    print(nd_cols)
+
+    # Put in order, and normalize all names
+    data = reorder(data)
+    data = data.rename(columns={c:str_norm(c) for c in data.columns})
+
+    # Get dictionary converting names to taxids
+    ncbi = ete3.NCBITaxa()
+    taxids = ncbi.get_name_translator(data.columns)
+    taxids = {k:v[0] for k,v in taxids.items()} # Taxid given as list
+
+    # Find columns that were not able to be translated
+    translatable_cols = set(taxids.keys())
+    all_cols = set(data.columns)
+    untranslatable_cols = all_cols - translatable_cols
+    
+    # Non-data columns are not subject to translation
+    untranslatable_cols = untranslatable_cols - set(map(str_norm, nd_cols))
+
+    # Drop any columns that couldn't be turned into taxids
+    if untranslatable_cols != set([]):
+        print(f"WARN: Unable to translate following columns to taxids: {', '.join(untranslatable_cols)}")
+        print(f"WARN: Dropping untranslated columns")
+
+        # Drop anything that isnt translated
+        data = data.drop(columns=untranslatable_cols)
+
+    # Rename columns to taxids, and sort in acending order (treating all entries as strings)
+    print(taxids)
+    data = data.rename(columns=taxids)
+    data = data.reindex(sorted(list(data.columns), key=str), axis=1)
+    return data
 
 if __name__ == "__main__":
     
@@ -253,7 +302,7 @@ if __name__ == "__main__":
 
     # Convert column names from bacteria to taxids
     if convert_taxid:
-        train_set = rename_cols_to_taxid(train_set)
-        test_set = rename_cols_to_taxid(test_set)
+        train_set = rename_cols_to_taxid(train_set, non_data + [read_count_col] + [sample_id_col] + [label_col])
+        test_set = rename_cols_to_taxid(test_set, non_data + [read_count_col] + [sample_id_col] + [label_col])
 
     write(train_set, test_set, args.output)
