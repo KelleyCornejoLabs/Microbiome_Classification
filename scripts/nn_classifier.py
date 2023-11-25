@@ -338,7 +338,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
         # Old architecture is WAY overcomplicated, not reccomended
         if not linear:
             structure = f"OLD Non-linear {train_features} -> {hidden_features} -> {classes}"
-            if dbg: print(structure)
+            if dbg: print("DBG:", structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
                 nn.ReLU(),
@@ -351,7 +351,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
             ).to(device)
         else:
             structure = f"OLD Linear {train_features} -> {hidden_features} -> {classes}"
-            if dbg: print(structure)
+            if dbg: print("DBG:", structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=101),
                 nn.Linear(in_features=101, out_features=51),
@@ -362,7 +362,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
     else:
         if not linear:
             structure = f"NEW Non-linear {train_features} -> {hidden_features} -> {classes}"
-            if dbg: print(structure)
+            if dbg: print("DBG:", structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.ReLU(),
@@ -371,7 +371,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
             ).to(device)
         else:
             structure = f"NEW Linear {train_features} -> {hidden_features} -> {classes}"
-            if dbg: print(structure)
+            if dbg: print("DBG:", structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.Linear(in_features=hidden_features, out_features=classes),

@@ -12,6 +12,14 @@ except:
     print("Required package argparse not available")
     exit()
 
+try:
+    import ete3
+    NCBI = True
+except:
+    print("Optional package ete3 not available")
+    NCBI = False
+    
+
 def load_file(path):
     # Read data
     test_xlsx = path.endswith(".xlsx")
@@ -176,6 +184,11 @@ def transpose_data(data):
     data = data.drop(index=0, axis=0)
     return data
 
+def rename_cols_to_taxid(data: pd.DataFrame) -> pd.DataFrame:
+    print("TODO: Unimplemented")
+    __import__("sys").exit()
+    return
+
 if __name__ == "__main__":
     
     # Arguments
@@ -190,7 +203,10 @@ if __name__ == "__main__":
     required.add_argument("-rc", "--read_counts", default=None, help="Column containing the number of reads for each sample")
     required.add_argument("-sid", "--sample_ids", default=None, help="Column contianing all sample IDs")
     required.add_argument("-lc", "--label_col", default=None, help="Column for community subtypes, renamed to HC_subCST")
-    required.add_argument("-tr", "--transpose", default="False", help="Set true if samples are aligned vertically")
+    required.add_argument("-tr", "--transpose", action=argparse.BooleanOptionalAction, help="Set true if samples are aligned vertically", default=False)
+    required.add_argument("-ct", "--convert-taxid", action=argparse.BooleanOptionalAction, help="Convert bactera names to taxids", default=False)
+    required.add_argument("-cn", "--convert-names", action=argparse.BooleanOptionalAction, help="Convert bactera names to taxids", default=False)
+    
 
     # Read arguments into parser
     args = parser.parse_args()
@@ -208,10 +224,9 @@ if __name__ == "__main__":
         print("Inappropriate type for tolerance. Must be float")
         exit(1)
 
-    transpose = True if args.transpose == "True" else False if args.transpose == "False" else None
-    if transpose == None:
-        print(f"Transpose should be 'True' or 'False', not '{args.transpose}'")
-        exit(1)
+    transpose = args.transpose
+    convert_names = args.convert_names
+    convert_taxid = args.convert_taxid
 
     # Default args for nd, rc, sid, lc are all for VALENCIA data set. Different from 'None' argument
     non_data = ['Val_CST', 'Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim', 'IV-A_sim','IV-B_sim',
@@ -235,4 +250,10 @@ if __name__ == "__main__":
     
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
     train_set, test_set = split(data, train_split, tolerance, labeled)
+
+    # Convert column names from bacteria to taxids
+    if convert_taxid:
+        train_set = rename_cols_to_taxid(train_set)
+        test_set = rename_cols_to_taxid(test_set)
+
     write(train_set, test_set, args.output)
