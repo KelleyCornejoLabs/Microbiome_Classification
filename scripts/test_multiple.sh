@@ -40,7 +40,7 @@ python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph -n
 
 # Test simple version
 model_path+="_simplified"
-python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path
+python $classifier_path -ite $test_set_path -cl -lb -out $out_path_nn -p $model_path --no-debug
 
 echo "---Simple-Neural---"
 python $valencia_eval_path -ip $out_path_nn.csv -id $test_set_path --no-graph -n "Neural Network Simplified" -o Simple_Neural_$conf_path

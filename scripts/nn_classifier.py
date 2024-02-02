@@ -308,7 +308,7 @@ def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = 
 # Create a Neural Net 
 # Current layers do sqrt(in*out) and split in half, and do it again. 51=sqrt(101*13) 101=sqrt(199*51) 26=sqrt(51*13)
 def generate_model(linear: bool, train_features: int, hidden_features: int, classes: int, dbg: bool, 
-                   old:bool = False) -> tuple[nn.Sequential, str, None]:
+                   old:bool = False, droprate = 0.3) -> tuple[nn.Sequential, str, None]:
     """Generates a fresh model based on model linearity, number of training features, number of 
     hidden features, and number of output features. Returns the model, a string representation
     of its structure, and None (for optimizer)"""
@@ -344,7 +344,8 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
             if dbg: print(structure)
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
-                nn.ReLU(),
+                nn.LeakyReLU(),
+                nn.Dropout(p=droprate),
                 nn.Linear(in_features=hidden_features, out_features=classes),
                 nn.Softmax(dim=1)
             ).to(device)

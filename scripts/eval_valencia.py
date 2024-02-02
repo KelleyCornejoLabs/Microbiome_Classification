@@ -42,7 +42,7 @@ required.add_argument("-g","--graph", action=argparse.BooleanOptionalAction, hel
 args = parser.parse_args()
 
 # ROC Curve
-def plot_roc_curve(true_y, y_prob, lbls, method):
+def     plot_roc_curve(true_y, y_prob, lbls, method):
     """
     plots the roc curve based of the probabilities
     """
@@ -89,9 +89,12 @@ disp.plot()
 
 plt.title(f"Confusion matrix for {args.name}")
 
+print(f"Saving: {args.output}")
 plt.savefig(f"{args.output}")
 if args.output == None:
     plt.show()
+
+plt.clf()
 
 #I love python
 #one_hot = lambda x:np.array([list(np.eye(len(all_lbls))[i if isinstance(i, int) else all_lbls.index(i)]) for i in x])

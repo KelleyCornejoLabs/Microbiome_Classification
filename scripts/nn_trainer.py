@@ -20,6 +20,9 @@ arguments.add_argument("-p", "--path", help="Path to save findings", default="re
 arguments.add_argument("-pt", "--path-tests", help="Path to Tests", default="tests/results")
 arguments.add_argument("-n", "--norms", help="Norm methods", default="none")
 arguments.add_argument("-r", "--regexs", help="regexs", default="none")
+arguments.add_argument("-d", "--droprates", help="regexs", default="none")
+arguments.add_argument("-f", "--features", help="regexs", default="none")
+
 
 args = parser.parse_args()
 
@@ -56,6 +59,10 @@ for n in norms:
 
 regex = args.regexs.split(",")
 
+drops = [float(x) for x in args.droprates.split(",")]
+
+features = [int(x) for x in args.features.split(",")]
+
 try:
     lrs = [float(lr) for lr in args.learning_rates.split(",")]
 except TypeError:
@@ -71,24 +78,29 @@ start = time.time()
 
 # Try each option
 performaces = {}
-for optim in optims:
-    for loss in losses:
-        for lr in lrs:
-            for n in norms:
+for n in norms:
+    # Get testing data
+    X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n, regex_remove=regex)
+
+    for optim in optims:
+        for loss in losses:
+            for lr in lrs:
+                for dr in drops:
+                    for f in features:
                 
-                # Get testing data
-                X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n, regex_remove=regex)
+                        model_performances = []
+                        print(f"Trying norm {n} ({norms.index(n)+1}/{len(norms)}), lr {lr} ({lrs.index(lr)+1}/{len(lrs)}), loss {loss} ({losses.index(loss)+1}/{len(losses)}), optim {optim} ({optims.index(optim)+1}/{len(optims)}), Droprate {dr}, Features {f}")
+                        for test in range(tests):
+                            print(f"Test {test}/ {tests}")
+                            path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{dr}_{f}_{test}".replace(".",",") # EU style for UNIX machines
+                            model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), f, len(y_train[0]), False, droprate=dr)
+                            acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
+                                                      0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=False, patience=1000)
+                            model_performances.append(acc)
+                            print("Accuracy:", acc)
 
-                model_performances = []
-                for test in range(tests):
-                    path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{test}".replace(".",",") # EU style for UNIX machines
-                    model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), 146, len(y_train[0]), True)
-                    acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
-                                              0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=True, patience=10000)
-                    model_performances.append(acc)
-
-                print(f"Done: test {test}/{tests}, norm {norms.index(n)}/{len(norms)}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}")
-                performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
+                        #print(f"Done: test {test}/{tests}, norm {norms.index(n)}/{len(norms)}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}, Droprate {dr}, Features {f}")
+                        performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
 
 taken = start-time.time()
 
@@ -99,6 +111,8 @@ with open(args.path+"_metrics.txt", "w") as f:
     f.write(f"\nOptimizers: {' '.join(optims)}")
     f.write(f"\nLearning Rates: {(lrs)}")
     f.write(f"\nNorms: {' '.join(norms)}")
+    f.write(f"\nDroprates: {' '.join(drops)}")
+    f.write(f"\nFeatures: {' '.join(features)}")
     f.write(f"\nEpochs: {max_epochs}")
     f.write(f"\nBest performances for each setup: {performaces}")
     f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
