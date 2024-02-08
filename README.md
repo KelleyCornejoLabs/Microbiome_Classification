@@ -1,7 +1,7 @@
 # Microbiome Classification
 This repository contains the scripts for the Microbiome Classification project
 
-[Logo](logo.png)!
+![Logo](logo.png)
 
 ## Scripts
 ### preprocess_valencia.py
