@@ -70,14 +70,8 @@ except TypeError:
     sys.exit(1)
 
 linear = not args.non_linear == "True"
-print("Linear", linear)
-print(f"Epochs {max_epochs}")
+performances = {}
 
-# TODO: Try pruning algorithms
-start = time.time()
-
-# Try each option
-performaces = {}
 for n in norms:
     # Get testing data
     X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = nn_classifier.load_data(args.input_train, args.input_test, norm=n, regex_remove=regex)
@@ -87,37 +81,14 @@ for n in norms:
             for lr in lrs:
                 for dr in drops:
                     for f in features:
-                
                         model_performances = []
-                        print(f"Trying norm {n} ({norms.index(n)+1}/{len(norms)}), lr {lr} ({lrs.index(lr)+1}/{len(lrs)}), loss {loss} ({losses.index(loss)+1}/{len(losses)}), optim {optim} ({optims.index(optim)+1}/{len(optims)}), Droprate {dr}, Features {f}")
                         for test in range(tests):
-                            print(f"Test {test}/ {tests}")
                             path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{dr}_{f}_{test}".replace(".",",") # EU style for UNIX machines
-                            model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), f, len(y_train[0]), False, droprate=dr)
-                            acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
-                                                      0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=False, patience=1000)
-                            model_performances.append(acc)
-                            print("Accuracy:", acc)
+                            path += "_metrics.txt"
+                            with open(path, "r") as file:
+                                model_performances.append(float(file.readline().split(" ")[3][:-1]))
 
-                        #print(f"Done: test {test}/{tests}, norm {norms.index(n)}/{len(norms)}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}, Droprate {dr}, Features {f}")
-                        performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
+                        performances[f"{optim}_{loss}_{lr}_{n}_{dr}_{f}"] = sum(model_performances)/tests
 
-taken = time.time()-start
-
-with open(args.path+"_metrics.txt", "w") as f:
-    f.write(f"Linear: {linear}")
-    f.write(f"\nTested: {tests} times")
-    f.write(f"\nLoss functions: {' '.join(losses)}")
-    f.write(f"\nOptimizers: {' '.join(optims)}")
-    f.write(f"\nLearning Rates: {(lrs)}")
-    f.write(f"\nNorms: {' '.join(norms)}")
-    f.write(f"\nDroprates: {' '.join([str(d) for d in drops])}")
-    f.write(f"\nFeatures: {' '.join([str(f) for f in features])}")
-    f.write(f"\nEpochs: {max_epochs}")
-    f.write(f"\nBest performances for each setup: {performaces}")
-    f.write(f"\nBest performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
-    f.write(f"\nTook: {math.floor(taken/60)}:{math.floor(taken/60)}:{round(taken%60)}")
-
-print(performaces)
-print(f"Best performer: {sorted(performaces.items(), key=lambda x:x[1], reverse=True)[0]}")
-print(f"\nTook: {math.floor(taken/3600)}:{math.floor((taken/60)%60):02}:{round(taken%60):02}")
+print(performances)
+print(f"Best performer: {sorted(performances.items(), key=lambda x:x[1], reverse=True)[0]}")

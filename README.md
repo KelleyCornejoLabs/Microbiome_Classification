@@ -1,6 +1,8 @@
 # Microbiome Classification
 This repository contains the scripts for the Microbiome Classification project
 
+[Logo](logo.png)!
+
 ## Scripts
 ### preprocess_valencia.py
 This script takes the data provided in the [VALENCIA project's repository](https://github.com/ravel-lab/VALENCIA) and preprocesses it into a format that can be used by VALENCIA. All scripts in this repository take .csv files in the same format as VALENCIA.

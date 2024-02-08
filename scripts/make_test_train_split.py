@@ -12,14 +12,6 @@ except:
     print("Required package argparse not available")
     exit()
 
-try:
-    import ete3
-    NCBI = True
-except:
-    print("Optional package ete3 not available")
-    NCBI = False
-    
-
 def load_file(path):
     # Read data
     test_xlsx = path.endswith(".xlsx")
@@ -37,21 +29,6 @@ def load_file(path):
         print("Invalid path")
         exit(1)
     return data
-
-# Put in alphabetical order so two datasets with same columns in different order works
-def reorder(df):
-    return df.reindex(sorted(df.columns, key=str_norm), axis=1)
-
-# Normalize the data so its all the same
-def str_norm(x: str):
-    x = x.lower().replace('_', ' ')
-
-    # Remove any prefix
-    if x[1] == ' ':
-        x = x[2:]
-
-    # Return lower case
-    return x
 
 # For naming consistency with VALENCIA
 def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_number_for_SRA', label_col="HC_subCST", 
@@ -199,41 +176,6 @@ def transpose_data(data):
     data = data.drop(index=0, axis=0)
     return data
 
-def rename_cols_to_taxid(data: pd.DataFrame) -> pd.DataFrame:
-    if not NCBI:
-        print("Package ete3 required to lookup NCBI taxids")
-        exit(1)
-
-    # Put in order, and normalize all names
-    data = reorder(data)
-    data = data.rename(columns={c:str_norm(c) for c in data.columns})
-
-    # Get dictionary converting names to taxids
-    ncbi = ete3.NCBITaxa()
-    taxids = ncbi.get_name_translator(data.columns)
-    taxids = {k:v[0] for k,v in taxids.items()} # Taxid given as list
-
-    # Find columns that were not able to be translated
-    translatable_cols = set(taxids.keys())
-    all_cols = set(data.columns)
-    untranslatable_cols = all_cols - translatable_cols
-    
-    # Non-data columns are not subject to translation
-    untranslatable_cols = untranslatable_cols - set(map(str_norm, ["read_count", "sampleid"]))
-
-    # Drop any columns that couldn't be turned into taxids
-    if untranslatable_cols != set([]):
-        print(f"WARN: Unable to translate following columns to taxids: {', '.join(untranslatable_cols)}")
-        print(f"WARN: Dropping untranslated columns")
-
-        # Drop anything that isnt translated
-        data = data.drop(columns=untranslatable_cols)
-
-    # Rename columns to taxids, and sort in acending order (treating all entries as strings)
-    data = data.rename(columns=taxids)
-    data = data.reindex(sorted(list(data.columns), key=str), axis=1)
-    return data
-
 if __name__ == "__main__":
     
     # Arguments
@@ -248,10 +190,7 @@ if __name__ == "__main__":
     required.add_argument("-rc", "--read_counts", default=None, help="Column containing the number of reads for each sample")
     required.add_argument("-sid", "--sample_ids", default=None, help="Column contianing all sample IDs")
     required.add_argument("-lc", "--label_col", default=None, help="Column for community subtypes, renamed to HC_subCST")
-    required.add_argument("-tr", "--transpose", action=argparse.BooleanOptionalAction, help="Set true if samples are aligned vertically", default=False)
-    required.add_argument("-ct", "--convert-taxid", action=argparse.BooleanOptionalAction, help="Convert bactera names to taxids", default=False)
-    required.add_argument("-cn", "--convert-names", action=argparse.BooleanOptionalAction, help="Convert bactera names to taxids", default=False)
-    
+    required.add_argument("-tr", "--transpose", default="False", help="Set true if samples are aligned vertically")
 
     # Read arguments into parser
     args = parser.parse_args()
@@ -269,9 +208,10 @@ if __name__ == "__main__":
         print("Inappropriate type for tolerance. Must be float")
         exit(1)
 
-    transpose = args.transpose
-    convert_names = args.convert_names
-    convert_taxid = args.convert_taxid
+    transpose = True if args.transpose == "True" else False if args.transpose == "False" else None
+    if transpose == None:
+        print(f"Transpose should be 'True' or 'False', not '{args.transpose}'")
+        exit(1)
 
     # Default args for nd, rc, sid, lc are all for VALENCIA data set. Different from 'None' argument
     non_data = ['Val_CST', 'Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim', 'IV-A_sim','IV-B_sim',
@@ -295,12 +235,4 @@ if __name__ == "__main__":
     
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
     train_set, test_set = split(data, train_split, tolerance, labeled)
-
-    print(data.head(), read_count_col, sample_id_col)
-
-    # Convert column names from bacteria to taxids
-    if convert_taxid:
-        train_set = rename_cols_to_taxid(train_set)
-        test_set = rename_cols_to_taxid(test_set)
-
     write(train_set, test_set, args.output)
