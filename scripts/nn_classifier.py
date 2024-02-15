@@ -345,7 +345,7 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.LeakyReLU(),
-                nn.Dropout(p=droprate),
+                nn.Dropout(p=droprate),     
                 nn.Linear(in_features=hidden_features, out_features=classes),
                 nn.Softmax(dim=1)
             ).to(device)
