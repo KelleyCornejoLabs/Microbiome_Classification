@@ -57,8 +57,10 @@ if __name__ == "__main__":
 
     # Arguments for tool
     arguments = parser.add_argument_group("Arguments")
-    arguments.add_argument("-in", "--input", help="Path to train input data as csv", default=None)
-    arguments.add_argument("-out", "--output", help="Path to train input data as csv", default=None)
+    arguments.add_argument("-in", "--input", help="Path to train input data as csv", default=None, required = True)
+    arguments.add_argument("-out", "--output", help="Path to train input data as csv", default=None, required = True)
+    arguments.add_argument("-cl", "--clusters", type=int, help="Number of clusters to use", default=None)
+    arguments.add_argument("-gr", "--graph", action=argparse.BooleanOptionalAction, help="Generate graphs of sihlouette and inertia scores", default=False)
     args = parser.parse_args()
 
     path = args.input
@@ -70,13 +72,19 @@ if __name__ == "__main__":
     data = extract_numpy(df, norm = True)
     print(data)
     
+    if args.graph:
+        print_elbow(data, 10)
+        print_silhouettes(data, 10)
+        exit(0)
 
-    print_elbow(data, 10)
-    print_silhouettes(data, 10)
+    if args.clusters == None:
+        print("ERROR: --clusters <int> required for clustering")
+        exit(1)
 
-    kmeans = KMeans(n_clusters=3)
-    preds = kmeans.fit_predict(data)
+    kmeans = KMeans(n_clusters=args.clusters)
+    predictions = kmeans.fit_predict(data)
 
-    df["HC_subCST"] = list(map(lambda x:["CST1", "CST2", "CST3"][x], preds))
+    unique_csts = [f"CST{i}" for i in range(args.clusters)]
+    df["HC_subCST"] = list(map(lambda x:unique_csts[x], predictions))
 
     df.to_csv(out)

@@ -4,6 +4,6 @@ OUTPUT_PATH="../oral_test_set/split"
 PREPROCESSOR_SCRIPT="oral_preprocessor.py"
 SPLIT_SCIPRT="make_test_train_split.py"
 
-python3 $PREPROCESSOR_SCRIPT -in $ORAL_DATA_PATH -out $PROCESSED_DATA_PATH
+python3 $PREPROCESSOR_SCRIPT -in $ORAL_DATA_PATH -out $PROCESSED_DATA_PATH -cl 3
 
 python3 $SPLIT_SCIPRT -i $PROCESSED_DATA_PATH -o $OUTPUT_PATH -t 0.03
