@@ -62,7 +62,7 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
     if read_count_col == "None":
         # Sum all count data columns to get total for each row, and add it as a column
         non_count = [sample_id_col]
-        if label_col != "None": non_count += label_col
+        if label_col != "None": non_count += [label_col]
         total = lambda i:sum(map(lambda x:float(x), list(data.drop(non_count, axis=1).iloc[i])))
         row_totals = [total(row) for row in range(len(data))]
         data['read_count'] = row_totals

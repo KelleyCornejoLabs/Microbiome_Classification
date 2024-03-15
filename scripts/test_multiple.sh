@@ -4,7 +4,8 @@
 valencia_path="../VALENCIA/Valencia.py"
 valencia_prep_path="./preprocess_valencia.py"
 valencia_eval_path="./eval_valencia.py"
-test_centroids="./new_centroids_subCST.csv"
+#test_centroids="./new_centroids_subCST.csv"
+test_centroids="../VALENCIA/CST_centroids_012920.csv"
 train_set_path="./out_train.csv"
 test_set_path="./out_test.csv"
 
