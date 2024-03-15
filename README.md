@@ -72,4 +72,6 @@ Boolean options to enable/disable a feature/mode should be used when you want to
 `--focus-columns` / `-fc` - Force simpler models to focus on these columns, ignoring the default importance evaluations\
 `--labeled` / `-lb` - Is the data provided for classification mode labeled\
 `--normalizing-function` / `-n` - Function used to normalize the data before training. All methods normalize by the total count first to account for sample quality differences. Default reccomended\
-`--regex-remove` / `-rr` - When loading data use this regex to remove features
+`--regex-remove` / `-rr` - When loading data use this regex to remove features\
+`--dropout` / `-dr` - Sets the dropout parameter. The droupout layer is between the two linear layers\
+`--importance-thresh` / `-it` - Sets the minimum affect on accuracy a feature must have for it to be considered important when training a simpler network (percent, default is 0.5% (`--importance-thresh 0.5`))
