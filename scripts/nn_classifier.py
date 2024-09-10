@@ -68,7 +68,8 @@ optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
 # Put in alphabetical order so two datasets with same columns in different order works
 def reorder(df):
-    return df.reindex(sorted(df.columns), axis=1)
+    order = sorted(df.columns, key=str_norm)
+    return df.reindex(order, axis=1)
 
 # Normalize the data so its all the same
 def str_norm(x: str):
@@ -119,10 +120,13 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
 
     # Chek if data is labeled
     labeled = "HC_subCST" in list(df.keys())
-    if debug: print(f"DBG: Data is {' not' if not labeled else ''}labeled")
+    if debug: print(f"DBG: Data is {'not ' if not labeled else ''}labeled")
 
     # Other required keys
-    required_keys = ["sampleID", "read_count"]
+    required_keys = ["sampleID"]#, "read_count"]
+    if "read_count" in list(df.keys()):
+        if debug: print("DBG: Found read_count")
+        required_keys.append("read_count")
     
     # Exit if wrong type of data found
     if expect_labeled != labeled:
@@ -180,6 +184,9 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
         # Add HC_subCST to the keys that will be dropped
         required_keys.append("HC_subCST")
 
+        # Convert all_labels to strings, to cover if labels are integers
+        all_labels = list(map(str, all_labels))
+
     # Drop the required keys, assign new df to normalized variable
     normalized_data = df.drop(columns=required_keys)
 
@@ -202,6 +209,10 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
                     print(f"ERR: Column {col} not found to drop")
                     exit(1)
 
+        if not set(keep) == set(map(str_norm, normalized_data.columns)):
+            print("ERR: Col discrepancy", keep, "\n", normalized_data.columns)
+            exit(1)
+
 
     # Allow removal of elements by regex. If regexes provided,
     if regex_remove != ['']:
@@ -218,13 +229,14 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
     count_columns = normalized_data.columns
 
     # Normalize the columns based on count data to adjust for sample 'quality'
-    for column in count_columns:
-        normalized_data[column] /= df["read_count"]
+    normalized_data = normalized_data.div(normalized_data.sum(axis=1), axis=0)
+    normalized_data[normalized_data.isnull()] = 1.0e-5
+    normalized_data[normalized_data.eq(0)] = 1.0e-5
 
     # Perform the requested normalizations
     if norm == "log":
         for column in count_columns:
-            normalized_data[column] /= list(map(lambda x:math.log10(x+0.001), normalized_data[column]))
+            normalized_data[column] /= list(map(lambda x:math.log10(x), normalized_data[column]))
 
     elif norm == "tmm":
         if not cnrm:
@@ -289,7 +301,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     # Print debug info for user
     if debug: print(f"DBG: Training split: {len(X_train)}, Testing split: {len(X_test)}")
     if debug: print(f"DBG: Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
-    if debug: print(f"DBG: First 5 labels of train: {', '.join(map(lambda i:all_labels_train[i.argmax()], y_train[:5]))}")
+    if debug: print(f"DBG: First 5 labels of train: {', '.join(map(lambda i:str(all_labels_train[i.argmax()]), y_train[:5]))}")
 
     return X_train, y_train, X_test, y_test, all_labels_train, ordered_prevelence, count_columns_train
 
@@ -345,9 +357,9 @@ def generate_model(linear: bool, train_features: int, hidden_features: int, clas
             classifier = nn.Sequential(
                 nn.Linear(in_features=train_features, out_features=hidden_features),
                 nn.LeakyReLU(),
-                nn.Dropout(p=droprate),     
+                nn.Dropout(p=droprate),
                 nn.Linear(in_features=hidden_features, out_features=classes),
-                nn.Softmax(dim=1)
+                #nn.Softmax(dim=1)
             ).to(device)
         else:
             structure = f"NEW Linear {train_features} -> {hidden_features} -> {classes}"
@@ -438,7 +450,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
           metrics_interval: int, thresh: float, loss_type: str, optim_type: str, 
           linear: bool, all_labels: list[str], ordered_prevalence: torch.Tensor, 
           path: str, structure: str, keys: list[str], optim: torch.optim.Optimizer|None = None, 
-          debug: bool = False, patience: int = 50) -> float:
+          debug: bool = False, patience: int = 50, write_file: bool = True) -> float:
     """Train model on given data with given hyperparameters and return max accuracy. Latest version of model may not be 
     best peforming on testing data, so load the model after training to get it"""
 
@@ -546,9 +558,6 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
             # Stop if accurate enough
             if optim.state_dict()["param_groups"][0]["lr"] <= thresh:
                 break
-
-    # Save model
-    #torch.save(obj=classifier.state_dict(), f=path+"_nn.pt")
     
     # Calculate time
     time_now = time.time()
@@ -557,19 +566,21 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
     # Write metrics
     with torch.inference_mode():
         test_pred = classifier(X_test)
-        with open(path + "_metrics.txt", "w") as f:
-            if debug: print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
-            f.write(f"Final Max Accuracy: {max_acc}% in {time_taken}\n")
 
-            if debug: print(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
-            f.write(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
+        if write_file:
+            with open(path + "_metrics.txt", "w") as f:
+                f.write(f"Final Max Accuracy: {max_acc}% in {time_taken}\n")
+                f.write(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
 
-            for i in range(len(epoch_count)):
-                f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
+                for i in range(len(epoch_count)):
+                    f.write(f"Epoch: {epoch_count[i]}, Train loss: {loss_values[i]}, Test Loss: {test_losses[i]}, Accuracy: {test_accuracies[i]}\n")
 
-            f.write("Cases: \n")
-            for i in range(10):
-                f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(test_pred[i])}\n")
+                f.write("Cases: \n")
+                for i in range(10):
+                    f.write(f"Actual: {i_to_lbl(y_test[i])}, Predicted: {i_to_lbl(test_pred[i])}\n")
+
+        if debug: print(f"Final Max Accuracy: {max_acc}% in {time_taken}")
+        if debug: print(f"Test Config: lr: {lr}, linear: {linear}, loss_fn: {loss_type}, optim: {optim_type}\n")
         
         # If matplot imported, save graph
         if mpl:
@@ -841,6 +852,10 @@ def train_simpler_model(train_path: str, test_path: str, sorted_importances: dic
                                                                                                   drop=unimportant_cols,
                                                                                                   debug=debug, norm=norm,
                                                                                                   regex_remove=regex_remove)
+        
+        #if debug:
+        print(f"DBG: Simplified using {len(SX_train[0])} features")
+
     else: # Or manually keep columns
         if debug: print("DBG: Focusing on provided columns")
         SX_train, Sy_train, SX_test, Sy_test, Sall_labels, Sordered_prevelence, Skeys = load_data(train_path, test_path, 
@@ -902,7 +917,6 @@ def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[s
 
     # Load unlabeled data for the columns used by model
     data, count_cols = load_unlabeled(path, keep=features, debug=debug)
-    print(f"Count cols: {count_cols}")
 
     # Get predictions
     model.eval()
@@ -955,14 +969,14 @@ if __name__ == "__main__":
     arguments.add_argument("-cl","--classify", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test", default=False)
     arguments.add_argument("-out", "--output", help="Path to output data as csv")
     arguments.add_argument("-tlr","--threshhold-lr", type=float, help="Train until lr is dropped to this level", default=0.00001)
-    arguments.add_argument("-lr","--learning-rate", type=float, help="Learning rate for ai", default=0.01)
+    arguments.add_argument("-lr","--learning-rate", type=float, help="Learning rate for ai", default=0.9)
     arguments.add_argument("-me","--max-epochs", type=int, help="Maximum number of epochs to train for. 50000 is default", default=50000)
     arguments.add_argument("-t","--train", action=argparse.BooleanOptionalAction, help="Should a model be trained based on input data?", default=True)
     arguments.add_argument("-c","--continue-train", action=argparse.BooleanOptionalAction, help="Should a saved model be trained more?", default=False)
     arguments.add_argument("-m","--metrics-interval", type=int, help="How many epochs should training metrics be taken?", default=50)
     arguments.add_argument("-l","--loss", help="Loss function. ce (default), nll, or kld", default="ce")
     arguments.add_argument("-lo","--load", action=argparse.BooleanOptionalAction, help="Load model to train a simpler one", default=False)
-    arguments.add_argument("-o","--optim", help="Optimizer. sgd, or adam (default)", default="adam")
+    arguments.add_argument("-o","--optim", help="Optimizer. sgd, or adam (default)", default="sgd")
     arguments.add_argument("-li","--linear", action=argparse.BooleanOptionalAction, help="Don't use ReLU?", default=False)
     arguments.add_argument("-pa","--patience", type=int, help="How many stagnant epochs to wait to cut lr?", default=100)
     arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
@@ -976,6 +990,8 @@ if __name__ == "__main__":
     arguments.add_argument("-lb", "--labeled", action=argparse.BooleanOptionalAction, help="Is data for classification labeled", default=False)
     arguments.add_argument("-n", "--normalizing-function", help="Method to use for normalizing data. none (default), log, tmm, rle", default="none")
     arguments.add_argument("-rr", "--regex-remove", help="Method to use for normalizing data. none (default), log, tmm, rle", default="")
+    arguments.add_argument("-dr","--dropout", type=float, help="Dropout layer parameter", default=0.3)
+    arguments.add_argument("-it","--importance_thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
 
 
     # Parse arguments
@@ -998,6 +1014,8 @@ if __name__ == "__main__":
     labeled = args.labeled
     norm_fn = args.normalizing_function
     load = args.load
+    dropout = args.dropout
+    importance = args.importance_thresh
 
     regex_remove = args.regex_remove.split(",")
 
@@ -1046,7 +1064,7 @@ if __name__ == "__main__":
             if debug: print("Training fresh model")
             accuracies = []
             for i in range(args.train_multiple):
-                classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), debug)
+                classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), debug, droprate=dropout)
                 acc = train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                             args.loss, args.optim, linear, all_labels, ordered_prevelence, f"{path}_{i}", structure, keys, 
                             optim=optim, patience=args.patience, debug=debug)
@@ -1071,12 +1089,12 @@ if __name__ == "__main__":
             sorted_importances = feature_importance(classifier, X_test, y_test, keys)
 
             Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
-                                                                                 sorted_importances, 1, lr, max_epochs, 
-                                                                                 metrics_interval, thresh, args.loss, 
-                                                                                 args.optim, linear, path, simple_cols,
-                                                                                 patience=args.patience, debug=debug,
-                                                                                 models = args.train_multiple, norm=norm_fn,
-                                                                                 regex_remove=regex_remove)
+                                                                                 sorted_importances, importance, lr, 
+                                                                                 max_epochs, metrics_interval, thresh, 
+                                                                                 args.loss, args.optim, linear, path, 
+                                                                                 simple_cols, patience=args.patience, 
+                                                                                 debug=debug, models = args.train_multiple, 
+                                                                                 norm=norm_fn, regex_remove=regex_remove)
 
             # Evaluate model and plot correlations
             if debug:
@@ -1112,7 +1130,7 @@ if __name__ == "__main__":
         plot_correlations(classifier, X_test, y_test, all_labels, keys)
 
         print("Correct guesses\n1st guess, 2nd guess, ...")
-        print(top_n_accuracy(classifier, X_train, y_train))
+        print(top_n_accuracy(classifier, X_test, y_test))
 
     elif info:
         # Load model and print info

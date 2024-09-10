@@ -16,6 +16,7 @@ arguments.add_argument("-o", "--optims", help="Comma seperated list of optimizer
 arguments.add_argument("-l", "--losses", help="Comma seperated lsit of losses to test", required=True)
 arguments.add_argument("-lr", "--learning-rates", help="Comma seperated lsit of lrs to test", required=True)
 arguments.add_argument("-nl", "--non-linear", help="Test non-linear", required=False)
+arguments.add_argument("-wf", "--write-file", help="Write metrics to a file", required=False)
 arguments.add_argument("-p", "--path", help="Path to save findings", default="results")
 arguments.add_argument("-pt", "--path-tests", help="Path to Tests", default="tests/results")
 arguments.add_argument("-n", "--norms", help="Norm methods", default="none")
@@ -70,6 +71,7 @@ except TypeError:
     sys.exit(1)
 
 linear = not args.non_linear == "True"
+write_file = not args.write_file == "True"
 print("Linear", linear)
 print(f"Epochs {max_epochs}")
 
@@ -95,12 +97,13 @@ for n in norms:
                             path = f"{args.path_tests}_{optim}_{loss}_{lr}_{n}_{dr}_{f}_{test}".replace(".",",") # EU style for UNIX machines
                             model, struct, _ = nn_classifier.generate_model(linear, len(X_train[0]), f, len(y_train[0]), False, droprate=dr)
                             acc = nn_classifier.train(model, X_train, y_train, X_test, y_test, lr, max_epochs, 1000, 
-                                                      0.000001, loss, optim, linear, all_labels, ordered_prevelence, path, struct, keys, debug=False, patience=1000)
+                                                      0.000001, loss, optim, linear, all_labels, ordered_prevelence, 
+                                                      path, struct, keys, debug=False, patience=1000, write_file=write_file)
                             model_performances.append(acc)
                             print("Accuracy:", acc)
 
                         #print(f"Done: test {test}/{tests}, norm {norms.index(n)}/{len(norms)}, lr {lrs.index(lr)}/{len(lrs)}, loss {losses.index(loss)}/{len(losses)}, optim {optims.index(optim)}/{len(optims)}, Droprate {dr}, Features {f}")
-                        performaces[f"{optim}_{loss}_{lr}_{n}"] = sum(model_performances) / tests
+                        performaces[f"{optim}_{loss}_{lr}_{n}_{dr}_{f}"] = sum(model_performances) / tests
 
 taken = time.time()-start
 
