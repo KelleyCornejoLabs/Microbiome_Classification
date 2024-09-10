@@ -21,6 +21,14 @@ Shell script that displays the accuracy of VALENCIA's predictions based on the f
 ### test_multiple.sh
 Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy score and confusion matrix for each
 
+## Procedure
+This section will outline the basic procedure to use StrataBionn to classify some labeled data from the dataset used in the Valencia repository, and evlauate the accuracy of these classifications. This process will be the same for any other datasets used, with notes made where there would be differences.
+
+### Preprocessing the Valencia dataset
+*Note: This step would likely not be necessary for custom datasets, depending on the structure of the data*
+
+The dataset used to 
+
 ## Neural Classifier usage
 The neural Classifier is the most promising and feature rich classification method. It should be capable of creating a classifier for any labeled set of training data for use on any unlabeled set of data.
 
