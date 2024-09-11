@@ -36,13 +36,14 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
                 'IV-C0_sim', 'IV-C1_sim', 'IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim', 'Subject_number', "HC_CST"]):
 
     # We don't need random other data that may be in file, ex: VALECIA's prediction values
-    for col in non_data:
-        try:
-            data = data.drop(columns=col)
-        except KeyError:
-            print(f"Coun't find non-data column '{col}', continuing")
-            continue    # Column wasn't there. Likely preprocessed
-    
+    if non_data != ["None"]:
+        for col in non_data:
+            try:
+                data = data.drop(columns=col)
+            except KeyError:
+                print(f"Couldn't find non-data column '{col}', continuing")
+                continue    # Column wasn't there. Likely preprocessed
+            
     # Can't create this row. If it doesn't exist, must be test data
     if label_col == "None":
         print("Unlabeled data")
@@ -72,11 +73,14 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
 
     # If corresponding row exists, rename it for valencia/nn_classifier
     data = data.rename(columns={read_count_col:'read_count', sample_id_col:'sampleID', label_col:'HC_subCST'})
+    
+    if label_col != "None":
+        data["HC_subCST"] = list(map(lambda x:str(x), list(data["HC_subCST"])))
 
     return data
 
 # Split the (formatted) data as requested
-def split(data, split, tolerance, labeled):
+def split(data, split, tolerance, labeled, validation_split=None):
     # NOTE: HC_subCST may not be an accurate name depending on the application, but it is used because
     # VALENCIA and its formatting were used to standardize testing between it and the 
     # generalized neural classifier.
@@ -107,7 +111,7 @@ def split(data, split, tolerance, labeled):
     # For unlabeled data no further processing required
     if not labeled:
         train_count = round((split / 100) * len(data))
-        print(f"Train: {train_count}")
+        print(f"Train: {train_count}/{len(data)}")
         return shuffle(data[:train_count]), shuffle(data[train_count:])
 
     # Found out what proportion of the data each CST makes. 
@@ -121,14 +125,26 @@ def split(data, split, tolerance, labeled):
     train_set = pd.DataFrame()
     test_set = pd.DataFrame()
 
+    if validation_split != None:
+        validation_count_by_category = (entries * (validation_split / 100)).astype(int)
+        val_set = pd.DataFrame()
+
     subCSTs = list(entries.keys())
     for subCST in subCSTs:
         subCST_entries = data.loc[data["HC_subCST"] == subCST]
 
         subCST_entries = subCST_entries.sample(frac=1).reset_index(drop=True) # Shuffle and return all data with new indicies
 
-        train_set = pd.concat([train_set, subCST_entries[:train_count_by_category[subCST]]])
-        test_set = pd.concat([test_set, subCST_entries[train_count_by_category[subCST]:]])
+        if validation_split == None:
+            train_set = pd.concat([train_set, subCST_entries[:train_count_by_category[subCST]]])
+            test_set = pd.concat([test_set, subCST_entries[train_count_by_category[subCST]:]])
+        else:
+            train_n = train_count_by_category[subCST]
+            val_n = validation_count_by_category[subCST]
+            train_set = pd.concat([train_set, subCST_entries[:train_n]])
+            test_set = pd.concat([test_set, subCST_entries[train_n:train_n+val_n]])
+            val_set = pd.concat([val_set, subCST_entries[train_n+val_n:]])
+
 
     # Check data against unsplit data by proportion of each label type
     train_entries = train_set.groupby(['HC_subCST']).count()['sampleID']
@@ -140,18 +156,54 @@ def split(data, split, tolerance, labeled):
     test_prevelance = test_entries/test_total_entries
 
     if ((abs(train_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
+        problematic = set((abs(train_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
+        problematic |= set((abs(test_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
+
+        worst = max(abs(train_prevelance - prevelance).max(), abs(test_prevelance - prevelance).max())
+        
         print("Error: problem when splitting data")
+        print("Following values are given as decimal (0-1) fequencies in the data set")
         print(f"Prevalance: {prevelance} \nTrain: {train_prevelance} \nTest: {test_prevelance}")
+        print(f"\033[31m\033[1mOut of tolerance: {', '.join(problematic)} - worst tolerance is {worst:1.5}", '\033[39m')
         exit(2)
 
-    # Shuffle SubCST data
-    train_set = shuffle(train_set)
-    test_set = shuffle(test_set)
 
-    return train_set, test_set
+    # Shuffle SubCST data
+    if validation_split == None:
+        train_set = shuffle(train_set)
+        test_set = shuffle(test_set)
+
+        print(len(train_set), len(test_set), len(train_set)+ len(test_set))
+
+        return train_set, test_set
+    else:
+        val_entries = val_set.groupby(['HC_subCST']).count()['sampleID']
+        val_total_entries = val_entries.sum()
+        val_prevelance = val_entries/val_total_entries
+
+        if ((abs(val_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
+            problematic = set((abs(val_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
+            problematic |= set((abs(test_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
+
+            worst = max(abs(val_prevelance - prevelance).max(), abs(test_prevelance - prevelance).max())
+
+            print("Error: problem when splitting data")
+            print("Following values are given as decimal (0-1) fequencies in the data set")
+            print(f"Prevalance: {prevelance} \nValidaiton: {val_prevelance} \nTest: {test_prevelance}")
+            print(f"\033[31m\033[1mOut of tolerance: {', '.join(problematic)} - worst tolerance is {worst:1.5}", '\033[39m')
+            exit(2)
+
+        train_set = shuffle(train_set)
+        test_set = shuffle(test_set)
+        val_set = shuffle(val_set)
+
+        print(len(train_set), len(test_set), len(val_set), len(train_set)+ len(test_set)+ len(val_set))
+
+        return train_set, test_set, val_set
+
 
 # Write sets to the path
-def write(train_set, test_set, path):
+def write(train_set, test_set, path, validaiton_set = None):
     path = path if path != None else "out"
 
     train_path = path + "_train.csv"
@@ -159,6 +211,10 @@ def write(train_set, test_set, path):
 
     train_set.to_csv(train_path, index=False)
     test_set.to_csv(test_path, index=False)
+
+    if not validaiton_set is None:
+        validation_path = path + "_validation.csv"
+        validaiton_set.to_csv(validation_path, index=False)
 
 # Transpose the data preserving columns
 def transpose_data(data):
@@ -185,6 +241,7 @@ if __name__ == "__main__":
     required.add_argument("-i", "--input", help="Path to input CSV file",required=True)
     required.add_argument("-o","--output", help="Output file path/prefix")
     required.add_argument("-s","--train-split", default=60, help="Percentage of data for training")
+    required.add_argument("-v","--validation-split", default=None, help="Percentage of data for validation")
     required.add_argument("-t","--tolerance", default=0.001, help="Decimal for tolerance between orginal data and outputs for checking")
     required.add_argument("-nd","--non-data", default=None, help="Columns which do not contain count data, and shouldn't be passed to classifier")
     required.add_argument("-rc", "--read_counts", default=None, help="Column containing the number of reads for each sample")
@@ -201,6 +258,16 @@ if __name__ == "__main__":
     except TypeError:
         print("Inappropriate type for train split. Must be numerical")
         exit(1)
+
+    if args.validation_split:
+        # Validate/format arguments
+        try:
+            validation_split = float(args.validation_split)
+        except TypeError:
+            print("Inappropriate type for validation split. Must be numerical")
+            exit(1)
+    else:
+        validation_split = None
 
     try:
         tolerance = float(args.tolerance)
@@ -234,5 +301,11 @@ if __name__ == "__main__":
     print(list(data.keys()).count("Actinobacteria"))
     
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
-    train_set, test_set = split(data, train_split, tolerance, labeled)
-    write(train_set, test_set, args.output)
+    print(len(data))
+
+    if validation_split == None:
+        train_set, test_set = split(data, train_split, tolerance, labeled)
+        write(train_set, test_set, args.output)
+    else:
+        train_set, test_set, val_set = split(data, train_split, tolerance, labeled, validation_split)
+        write(train_set, test_set, args.output, val_set)

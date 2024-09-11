@@ -24,10 +24,10 @@ Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy
 ## Procedure
 This section will outline the basic procedure to use StrataBionn to classify some labeled data from the dataset used in the Valencia repository, and evlauate the accuracy of these classifications. This process will be the same for any other datasets used, with notes made where there would be differences.
 
-### Preprocessing the Valencia dataset
-*Note: This step would likely not be necessary for custom datasets, depending on the structure of the data*
+### Splitting the dataset
+*Note: The dataset provided in the Valencia github repository requires some pre-processing before being used with the Valencia tool itself. StrataBionn inherited the dataset formatting used by Valencia, so some pre-processing must be done to use this dataset. This preprocessing can be done either by the included `preprocess_valencia.py`, or it can be done by `make_test_train_split.py` before splitting.* 
 
-The dataset used to 
+
 
 ## Neural Classifier usage
 The neural Classifier is the most promising and feature rich classification method. It should be capable of creating a classifier for any labeled set of training data for use on any unlabeled set of data.

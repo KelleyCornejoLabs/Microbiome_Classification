@@ -66,6 +66,8 @@ if device == "cuda":
 losses = {"nll":nn.NLLLoss, "ce":nn.CrossEntropyLoss, "kld":nn.KLDivLoss}
 optims = {"sgd": torch.optim.SGD, "adam":torch.optim.Adam}
 
+VERSION = 0.0
+
 # Put in alphabetical order so two datasets with same columns in different order works
 def reorder(df):
     order = sorted(df.columns, key=str_norm)
@@ -541,6 +543,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
                     max_acc = test_accuracy
                     torch.save({"model": classifier.state_dict(),
                                 "structue": structure,
+                                "version": VERSION,
                                 "features": keys,
                                 "all_labels": all_labels,
                                 "optim_type": optim_type,
@@ -554,7 +557,6 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
             classifier.train()
 
-            # TODO: Doesnt work for SGD, also accuracy is incorrect term now
             # Stop if accurate enough
             if optim.state_dict()["param_groups"][0]["lr"] <= thresh:
                 break
@@ -759,6 +761,11 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
         print(f"Couldn't read {path}_nn.pt")
         exit(1)
 
+    if checkpoint.get("version") != VERSION:
+        print("ERR: Couldn't load model due to version mismatch")
+        print(f"StrataBionn is version {VERSION} while model is version {checkpoint.get('version')}")
+        exit(1)
+
     # Validate architecture type, linearity, and layer sizes
     structure = checkpoint["structue"].split(" ")
     
@@ -829,8 +836,9 @@ def get_model_info(path: str) -> tuple[dict, str, list[str], str, float, dict]:
     optim_type = checkpoint.get("optim_type")
     lr = checkpoint.get("lr")
     optim_sd = checkpoint.get("optim")
+    ver = checkpoint.get("version")
     
-    return model_sd, structure, all_labels, features, optim_type, lr, optim_sd
+    return model_sd, structure, all_labels, features, optim_type, lr, optim_sd, ver
 
 # Train a simpler model based on only the columns with importance surpassing threshold
 def train_simpler_model(train_path: str, test_path: str, sorted_importances: dict[str, float], 
@@ -991,7 +999,7 @@ if __name__ == "__main__":
     arguments.add_argument("-n", "--normalizing-function", help="Method to use for normalizing data. none (default), log, tmm, rle", default="none")
     arguments.add_argument("-rr", "--regex-remove", help="Method to use for normalizing data. none (default), log, tmm, rle", default="")
     arguments.add_argument("-dr","--dropout", type=float, help="Dropout layer parameter", default=0.3)
-    arguments.add_argument("-it","--importance_thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
+    arguments.add_argument("-it","--importance-thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
 
 
     # Parse arguments
@@ -1134,7 +1142,7 @@ if __name__ == "__main__":
 
     elif info:
         # Load model and print info
-        model_state, structure, all_labels, features, optim_type, lr, optim_state = get_model_info(path)
+        model_state, structure, all_labels, features, optim_type, lr, optim_state, version = get_model_info(path)
 
         # Make len and .join() work for invalid models
         if features is None: features = []
@@ -1145,3 +1153,4 @@ if __name__ == "__main__":
         print(f"It requires {len(features)} features: {', '.join(features)}") 
         print(f"It predicts {len(all_labels)} classes: {', '.join(all_labels)}") 
         print(f"Optimizer used: {optim_type} Final learning rate: {lr}") 
+        print(f"Model trained with StrataBionn version {version} (currently using version {VERSION})") 
