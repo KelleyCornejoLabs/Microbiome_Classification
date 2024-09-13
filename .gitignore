@@ -167,3 +167,5 @@ models/
 data/
 
 scripts/__pycache__/
+
+scratch/

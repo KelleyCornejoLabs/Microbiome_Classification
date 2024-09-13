@@ -609,7 +609,7 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     """Test model, print accuracy and confusion matrix"""
 
     if not skl:
-        print("Scikit Learn required for testing")
+        print("WARN: Scikit Learn required for testing")
         return
 
     # Get predictions
@@ -1130,8 +1130,8 @@ if __name__ == "__main__":
         classifier, _, _, features, _ = load_model(path, return_features = True, debug=debug)
 
         #print(features)
-        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
-                        load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
+        X_test, y_test, all_labels, _, keys = \
+                load_file(args.input_test, True, keep=features, debug=debug, norm=norm_fn, regex_remove=regex_remove)
  
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
