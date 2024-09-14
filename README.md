@@ -22,30 +22,32 @@ Shell script that displays the accuracy of VALENCIA's predictions based on the f
 Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy score and confusion matrix for each
 
 ## Procedure
-This section will outline the basic procedure to use StrataBionn to classify some labeled data from the dataset used in the Valencia repository, and evlauate the accuracy of these classifications. This process will be the same for any other datasets used, with notes made where there would be differences.
+This section will outline the basic procedure to use StrataBionn to classify labeled data from the dataset included in the Valencia repository, and evlauate the accuracy of these classifications. This process will be the same for any other dataset used, with notes made where the process would be differ.
 
 ### Splitting the dataset
-*Note: The dataset provided in the Valencia github repository requires some pre-processing before being used with the Valencia tool itself. StrataBionn inherited the dataset formatting used by Valencia, so some pre-processing must be done to use this dataset. This preprocessing can be done either by the included `preprocess_valencia.py`, or it can be done by `make_test_train_split.py` before splitting.* 
+*Note: The dataset provided in the Valencia github repository requires some pre-processing before it can be used with the Valencia tool. StrataBionn uses the same dataset formatting as Valencia, so some pre-processing must be done in order to use this dataset. This preprocessing can be done either by the included `preprocess_valencia.py` script, or it can be done automatically by `make_test_train_split.py` before splitting. `make_test_train_split.py` must be manually configured to process datasets which use a different formatting.* 
 
-We will split the data into 3 different sets for training, testing, and validating the model. The training set will be used to discover the patterns used to make classifications, the test set will be used in the training process to detect overfitting, and the validation set will be used to check the final accuracy of the model on never before seen data. We will split the dataset into an 80/10/10 training/test/validaiton split. The default options for the make_test_train_split script are set to accept the valencia file, so we don't need to set any of them.
+We will split the data into 3 different sets for training, testing, and validating the model. The training set will be used to discover the patterns used to make classifications, the test set will be used in the training process to detect overfitting, and the validation set will be used to check the final accuracy of the model on never before seen data. We will split the dataset into an 80/10/10 training/test/validaiton split. The default options for the make_test_train_split script are set to accept the valencia file, so we don't need to set any of them. Other datasets may require some options to be manually set (options are described lower in this readme).
 
 `python3 /this_repo/scripts/make_test_train_split.py -i /Valencia/all_samples_taxonomic_composition_data.csv -s 80 -v 10 -o "valencia_data" -t 0.0015`
 
-This will create files called valencia_data_train.csv, valencia_data_test.csv, and valencia_data_validation.csv. The tolerance is 0.0005 above the default allowed tolerance so it needs to be increased.
+This will create files called valencia_data_train.csv, valencia_data_test.csv, and valencia_data_validation.csv. The tolerance is 0.0005 above the default allowed tolerance (0.001 or 0.1%) so it needs to be increased. The tolerance corresponds to the maximum percent difference in class distributions across the split datasets.
 
 ### Training a classifier
-Now we can train a model on our split Valencia dataset. We will use the valencia_data_train.csv set to find patterns, and we will use the valencia_data_test.csv set to make sure the model is not overfitting to the training set. We can use the following command to train using the default settings, and save the classifier model as saved_model (file containing model will be saved_model_nn.pt, but it can be loaded by entering 'saved_model')
+Now we can train a model on our split Valencia dataset. We will use the valencia_data_train.csv set to find patterns, and we will use the valencia_data_test.csv set to make sure the model is not overfitting to the training set. The test set is also used to measure the accuracy on "unseen" data during training. We can use the following command to train using the default settings, and save the classifier model under the name 'saved_model' (the file containing model will be saved_model_nn.pt, but it can be loaded by entering 'saved_model').
 
 `python3 nn_classifier.py -ite valencia_data_test.csv -itr valencia_data_train.csv -p saved_model`
 
-At the end, some plots will appear. One shows the loss over time, and another shows a confusion matrix, and the last compares sample classification based on the selected species's count data. These graphs will be explained in greater detail in the next section. They can be closed by pressing the q key or closing the window normally.
+At the end, three plots will appear. One shows the loss over time, and another shows a confusion matrix, and the last compares sample classification based on the selected species's count data. These graphs will be explained in greater detail in the next section. They can be closed by pressing the q key or closing the window as normal.
 
 ### Testing a model
 You may have seen some of the stats printed during training. If you want to see these again, or see the stats for a different dataset, run the following command:
 
 `python3 nn_classifier.py -ite valencia_data_validation.csv -p saved_model -ta`
 
-Notice the above command uses the validation set, which the model has not seen yet. This is important because the model looks for patterns found within the training data, and the model keeps running until it finds patterns that work for the test set. To know if these patterns are general enough to work on any data, we need to use unseen data to validate them.
+Notice the above command uses the validation set, which the model has not seen yet. This is important because the model looks for patterns found within the training data, and stopping conditions are set based on performance how well the patterns work on the test set. To know if these patterns are general enough to work on any data, we need to use unseen data to validate them.
+
+[//]: # (the model keeps running until it finds patterns that work for the test set.)
 
 After running this command, the accuracy will be printed in the console, and the confusion matrix will appear. The numbers show how many samples of the corresponding sample type were classified as the corresponding label type. A heatmap is also provided to highlight hotspots where the model may be making a large number of incorrect assignments. After closing the confusion matrix a text based representation of it will be printed to the terminal, and the weighted F1 score will be printed. The next graph to appear will plot all samples based on their count data for two different bacteria species. The samples are then colored based on their assigned CST to help visualize the decision boundaries that make the model work. The buttons allow you to select which two species to compare, and you can cycle through them in alphabetical order. After closing this interactive graph, the cumulative guess rankings are printed to the terminal. These show how many of the classifier's first predictions were correct, followed by the number of predictions where the model's second guess would have been correct, continuing until the last guess was corrent. If the model's second guess is frequently correct, that suggests there may be two very similar calssifications which may be very difficult to differentiate.
 
