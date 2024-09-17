@@ -10,7 +10,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="This tool splits VALENCIA data into a testing and training split for training")
 
     required = parser.add_argument_group("Required arguments")
-    required.add_argument("-iv", "--input-valencia", help="Path to VALENCUA input CSV file",required=True)
+    required.add_argument("-iv", "--input-valencia", help="Path to VALENCIA input CSV file",required=True)
     required.add_argument("-i", "--input", help="Path to input CSV file",required=True)
 
     # Read arguments into parser

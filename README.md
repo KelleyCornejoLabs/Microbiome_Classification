@@ -21,7 +21,7 @@ Shell script that displays the accuracy of VALENCIA's predictions based on the f
 ### test_multiple.sh
 Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy score and confusion matrix for each
 
-## Procedure
+## Procedure for training on VALENCIA repository data
 This section will outline the basic procedure to use StrataBionn to classify labeled data from the dataset included in the Valencia repository, and evlauate the accuracy of these classifications. This process will be the same for any other dataset used, with notes made where the process would be differ.
 
 ### Splitting the dataset
@@ -50,6 +50,21 @@ Notice the above command uses the validation set, which the model has not seen y
 [//]: # (the model keeps running until it finds patterns that work for the test set.)
 
 After running this command, the accuracy will be printed in the console, and the confusion matrix will appear. The numbers show how many samples with the corresponding true label were classified as the corresponding predicted label type. A heatmap is also provided to highlight hotspots where the model may be making a large number of incorrect assignments. Correct assignments appear in a diagonal line from the top left to the bottom right. After closing the confusion matrix a text based representation of it will be printed to the terminal, and the weighted F1 score will be printed. The next graph to appear will plot all samples on a 2D graph based on their count data for two different bacteria species. The samples are color coded based on their assigned CST to help visualize the decision boundaries that make the model work. The buttons allow you to select which two species to compare, and you can cycle through them in alphabetical order. After closing this interactive graph, the cumulative guess rankings are printed to the terminal. These show how many of the classifier's first predictions were correct, followed by the number of predictions where the model's second guess would have been correct, continuing until the last guess. If the model's second guess is frequently correct, that suggests there may be two very similar calssifications which may be very difficult to differentiate.
+
+## Procedure for applying VALENCIA classifications to an unlabeled vaginal microbiome dataset
+This section will outline the procedure used to classify samples from a different dataset, which in our case will the the ??? dataset from Hickey et al. The general procedure will be getting a trained model for VALENCIA, training a simpler model on the species found in both datasets, labeling the data to create a dataset, and finally training a new model on the newly labeled dataset. This procedure will be applicable when applying any pre-existing classification onto an unclassified dataset, VALENCIA is just used for ease of example. The unclassified datasets will need to use a VALENCIA/StrataBionn compliant formatting. How to reformat the data will be described in detail later.
+
+### Training a model on the pre-classified dataset (VALENCIA)
+Since we are using VALENCIA for our pre-classified dataset, the [above process](#procedure-for-training-on-valencia-repository-data) can be used. If you wish to apply a different base classification to the unlabeled data, you can use a modified version of the above process to create a classifier for it. It will likely require the arguments for the splitting script to be set to fit your specific labeled dataset. 
+
+### Training a simpler model for both datasets
+We cannot immediately apply the classifier found above to our unlabeled data because the species used in both datasets may differ. We first need to find the overlap in these datasets, the species which are found in both datasets. For this purpose we created the tool `find_VAL_overlap.py` found in this repository. Provided both datasets it will use the classifiers string normalization function to find species which the model will assume to be the same. You can run the command below to get the common species.
+
+`python3 find_VAL_overlap.py -iv valencia_train.csv -i hickey_train.csv`
+
+This will produce a line saying `--For use in nn_classifier:--` followed by a comma seperated list of the the common bacteria.
+
+TODO: Handle issue caused by a class being missing in one dataset. Currently an issue in the hickey automated test script
 
 ## Neural Classifier usage
 The neural Classifier is the most promising and feature rich classification method. It should be capable of creating a classifier for any labeled set of training data for use on any unlabeled set of data.
