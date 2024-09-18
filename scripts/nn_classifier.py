@@ -86,10 +86,43 @@ def str_norm(x: str):
     # Return lower_camel_case
     return x
 
+# Return a set containing all labels found in both datasets
+def get_all_labels(path_train: str, path_test: str, debug: bool = False):
+    
+    # Get the data from csv or excel
+    get_data = lambda path: pd.read_csv(path) if path.endswith(".csv") else pd.read_excel(path)
+
+    # Try to load training and testing dfs
+    try:
+        train_df = get_data(path_train)
+        test_df = get_data(path_test)
+
+    except FileNotFoundError:
+        # Error and exit if couldn't load
+        print(f"ERR: Could not load input data from {path}")
+        exit()
+
+    # Check if data is labeled
+    labeled = "HC_subCST" in list(train_df.keys()) and "HC_subCST" in list(test_df.keys())
+
+    # If data not labeled, we can't get all labels
+    if not labeled:
+        if debug: print("WARN: One or more sets are not labeled")
+        return
+    
+    # Get the labels for both sets
+    training_labels = set(train_df["HC_subCST"])
+    testing_labels = set(test_df["HC_subCST"])
+
+    if training_labels != testing_labels:
+        if debug: print("WARN: Testing and training labels differ. Choosing superset of both")
+
+    return training_labels|testing_labels
+
 # Load one file to tensor
 def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [], 
               keep: None|list[str] = None, debug: bool = False, 
-              norm: str = "none", regex_remove: list[str] = [''],) -> \
+              norm: str = "none", regex_remove: list[str] = [''], all_labels: set[str] = None) -> \
               tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
     """Loads classified or unclassified data. Dropping columns in drop, only keeping columns 
     in keep, or removing columns according to a regex (if they are supplied). Will only return
@@ -163,7 +196,7 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
     # If this is labeled data, 
     if labeled:
         # Get the superset of all possible classifications
-        all_labels = sorted(list(set(df["HC_subCST"])))
+        if all_labels == None: all_labels = sorted(list(set(df["HC_subCST"])))
 
         # Create function to convert string names to a one-hot vector
         lbl_to_i = lambda lbl: np.eye(len(all_labels))[all_labels.index(lbl)]
@@ -180,7 +213,7 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
         # impact the accuracy of more common classes a lot
 
         # Return normalized pervelance stats for the data, for weighting SGD
-        ordered_prevelence = torch.tensor([1/entries[all_labels[i]] for i in range(len(all_labels))]).to(device)
+        ordered_prevelence = torch.tensor([1/entries[all_labels[i]] if all_labels[i] in entries else 0 for i in range(len(all_labels))]).to(device)
         ordered_prevelence *= 1/ordered_prevelence.min()
 
         # Add HC_subCST to the keys that will be dropped
@@ -247,6 +280,31 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
 
         normalized_data = conorm.tmm(normalized_data.T).T
 
+    elif norm == "z-score":
+        for column in count_columns:
+            avg = normalized_data[column].sum()/len(normalized_data[column])
+            stddev = math.sqrt(((normalized_data[column]-avg)**2).sum()/len(normalized_data[column]))
+
+            normalized_data[column] -= avg
+            normalized_data[column] /= stddev
+
+    elif norm == "max-min":
+        for column in count_columns:
+            minimum = normalized_data[column].min()
+            maximum = normalized_data[column].max()
+
+            normalized_data[column] -= minimum
+            normalized_data[column] /= maximum - minimum
+
+    elif norm == "stddev":
+        for column in count_columns:
+            avg = normalized_data[column].sum()/len(normalized_data[column])
+            stddev = math.sqrt(((normalized_data[column]-avg)**2).sum()/len(normalized_data[column]))
+
+            normalized_data[column] /= stddev
+
+
+
     # Order consistently
     normalized_data = reorder(normalized_data)
 
@@ -273,13 +331,16 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     the column names of those containing input data. Drop drops the rows provided as strigns in a list, 
     Keep keeps the rows provided as a list of strings if they exist."""
 
+    # TODO: Calculate all labels here
+    all_labels = sorted(list(get_all_labels(train_path, test_path, debug=debug)))
+
     # Load training data
     X_train, y_train, all_labels_train, ordered_prevelence, count_columns_train = \
-                load_file(train_path, True, drop, keep, debug, norm, regex_remove)
+                load_file(train_path, True, drop, keep, debug, norm, regex_remove, all_labels=all_labels)
     
     # Load testing data
     X_test, y_test, all_labels_test, _, count_columns_test = \
-                load_file(test_path, True, drop, keep, debug, norm, regex_remove)
+                load_file(test_path, True, drop, keep, debug, norm, regex_remove, all_labels=all_labels)
     
     # Function to find differences in count coluns/labels
     def find_different (train, test):
@@ -293,11 +354,10 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
         exit(2)
 
     # Detect if cound columns are different after loading/processing, warn user if they are
-    different_lbls = find_different(all_labels_train, all_labels_test)
+    different_lbls = (set(all_labels_train)-set(all_labels_test))|(set(all_labels_test)-set(all_labels_train))
     if len(different_lbls) != 0:
-        print("ERR: Training and test set do not contain same labels, or they are not in the same order")
-        print(f"Found {len(different_lbls)} (after pre-processing): {''.join(different_lbls)}")
-        exit(2)
+        print("WARN: Training and test set do not contain same labels")
+        print(f"Found {len(different_lbls)} (after pre-processing): {', '.join(different_lbls)}")
 
    
     # Print debug info for user
@@ -305,7 +365,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     if debug: print(f"DBG: Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
     if debug: print(f"DBG: First 5 labels of train: {', '.join(map(lambda i:str(all_labels_train[i.argmax()]), y_train[:5]))}")
 
-    return X_train, y_train, X_test, y_test, all_labels_train, ordered_prevelence, count_columns_train
+    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns_train
 
 # Load unlabeled data for classification by model
 def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = None, 
@@ -529,7 +589,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
                 test_pred = classifier(X_test)
                 if loss_type == "nll":
                     test_loss = loss_fn(test_pred, y_test.argmax(dim=1))
-                else:
+                else:   
                     test_loss = loss_fn(test_pred, y_test)
 
                 test_accuracy = accuracy_test(y_test, test_pred)
@@ -609,7 +669,7 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     """Test model, print accuracy and confusion matrix"""
 
     if not skl:
-        print("WARN: Scikit Learn required for testing")
+        print("Scikit Learn required for testing")
         return
 
     # Get predictions
@@ -624,11 +684,12 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     # Accuracy
     print(f"accuracy: {accuracy_test(y_test, y_predictions):.2f}%")
 
-    print('  '.join(all_labels))
+    maxi = lambda x: x.index(max(x))
+    lbls_found = list(map(lambda x: all_labels[x], set([maxi(a.tolist()) for a in y_test])))
 
     # Confusion matrix
     conf_mat = confusion_matrix(lbls, predictions)
-    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=lbls_found)
     disp.plot()
     plt.show()
     print(conf_mat)
@@ -1130,8 +1191,8 @@ if __name__ == "__main__":
         classifier, _, _, features, _ = load_model(path, return_features = True, debug=debug)
 
         #print(features)
-        X_test, y_test, all_labels, _, keys = \
-                load_file(args.input_test, True, keep=features, debug=debug, norm=norm_fn, regex_remove=regex_remove)
+        X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
+                        load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
  
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
