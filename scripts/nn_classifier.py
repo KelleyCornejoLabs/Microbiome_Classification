@@ -365,7 +365,7 @@ def load_data(train_path: str, test_path: str, drop: None|list[str] = [],
     if debug: print(f"DBG: Sizes: train: {len(X_train), len(y_train)}, test: {len(X_test), len(y_test)}")
     if debug: print(f"DBG: First 5 labels of train: {', '.join(map(lambda i:str(all_labels_train[i.argmax()]), y_train[:5]))}")
 
-    return X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, count_columns_train
+    return X_train, y_train, X_test, y_test, all_labels_train, ordered_prevelence, count_columns_train
 
 # Load unlabeled data for classification by model
 def load_unlabeled(path: str, drop: list[str]|None = [], keep: list[str]|None = None, 
@@ -684,12 +684,11 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     # Accuracy
     print(f"accuracy: {accuracy_test(y_test, y_predictions):.2f}%")
 
-    maxi = lambda x: x.index(max(x))
-    lbls_found = list(map(lambda x: all_labels[x], set([maxi(a.tolist()) for a in y_test])))
+    print('  '.join(all_labels))
 
     # Confusion matrix
     conf_mat = confusion_matrix(lbls, predictions)
-    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=lbls_found)
+    disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
     disp.plot()
     plt.show()
     print(conf_mat)
@@ -1152,24 +1151,6 @@ if __name__ == "__main__":
             test(classifier, X_test, y_test, all_labels)
             plot_correlations(classifier, X_test, y_test, all_labels, keys)
 
-        if train_simple:
-            if debug: print("Training simplified")
-            # Find the sorted imporrtances of each feature, then train and test a network on the importnant features
-            sorted_importances = feature_importance(classifier, X_test, y_test, keys)
-
-            Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
-                                                                                 sorted_importances, importance, lr, 
-                                                                                 max_epochs, metrics_interval, thresh, 
-                                                                                 args.loss, args.optim, linear, path, 
-                                                                                 simple_cols, patience=args.patience, 
-                                                                                 debug=debug, models = args.train_multiple, 
-                                                                                 norm=norm_fn, regex_remove=regex_remove)
-
-            # Evaluate model and plot correlations
-            if debug:
-                test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
-                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
-
     elif classify:
         # TODO
         #data, data_features = load_unlabeled(args.input_test)
@@ -1215,3 +1196,29 @@ if __name__ == "__main__":
         print(f"It predicts {len(all_labels)} classes: {', '.join(all_labels)}") 
         print(f"Optimizer used: {optim_type} Final learning rate: {lr}") 
         print(f"Model trained with StrataBionn version {version} (currently using version {VERSION})") 
+    
+
+    if train_simple:
+        if debug: print("Training simplified")
+        # Find the sorted imporrtances of each feature, then train and test a network on the importnant features
+        
+        if args.focus_columns == None:
+            sorted_importances = feature_importance(classifier, X_test, y_test, keys)
+        else:
+            sorted_importances = {}
+
+        Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
+                                                                             sorted_importances, importance, lr, 
+                                                                             max_epochs, metrics_interval, thresh, 
+                                                                             args.loss, args.optim, linear, path, 
+                                                                             simple_cols, patience=args.patience, 
+                                                                             debug=debug, models = args.train_multiple, 
+                                                                             norm=norm_fn, regex_remove=regex_remove)
+
+        # Evaluate model and plot correlations
+        if debug:
+            test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
+            if args.focus_columns == None:
+                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
+            else:
+                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(args.focus_columns))

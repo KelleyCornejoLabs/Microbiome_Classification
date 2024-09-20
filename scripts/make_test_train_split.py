@@ -212,6 +212,8 @@ def write(train_set, test_set, path, validaiton_set = None):
     train_set.to_csv(train_path, index=False)
     test_set.to_csv(test_path, index=False)
 
+    print(f"Wrote: {train_path} and {test_path}")
+
     if not validaiton_set is None:
         validation_path = path + "_validation.csv"
         validaiton_set.to_csv(validation_path, index=False)
