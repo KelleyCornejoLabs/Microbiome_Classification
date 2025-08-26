@@ -50,37 +50,47 @@ if __name__ == "__main__":
     arguments.add_argument("-n", "--norm", help="noralization", default="none")
     arguments.add_argument("-f", "--features", help="max featuers", default="sqrt")
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
+    arguments.add_argument("-ta","--test-accuracy", action=argparse.BooleanOptionalAction, help="Test accurcy of test set classifications", default=False)
 
     # Parse arguments
     args = parser.parse_args()
 
+    test_acc = args.test_accuracy
+
     # Load all data an convert it to numpy for sklearn
-    X_train, y_train, X_test, y_test, all_labels, _, _ = nn_classifier.load_data(args.input_train, args.input_test, norm=args.norm)
+    if test_acc:
+        X_train, y_train, X_test, y_test, all_labels, _, _ = nn_classifier.load_data(args.input_train, args.input_test, norm=args.norm, debug=args.debug)
+        y_test = y_test.argmax(dim=1).cpu().numpy()
+    else:
+        X_train, y_train, all_labels, _, _ = \
+                nn_classifier.load_file(args.input_train, True)
+        X_test, _ = \
+                nn_classifier.load_file(args.input_test, False)
 
     X_train = X_train.cpu().numpy()
     X_test = X_test.cpu().numpy()
 
     y_train = y_train.argmax(dim=1).cpu().numpy()
-    y_test = y_test.argmax(dim=1).cpu().numpy()
 
     # Maybe have more estimators that look at a smaller set of features? To try and find several linear differences instead of looking so broadly?
     # Train model
     model = RandomForestClassifier(n_estimators=100, max_features="sqrt")
     model.fit(X_train, y_train)
 
-    # Test accuracy
-    predictions = model.predict(X_test)
-    incorrect = [':'.join([all_labels[i], all_labels[j]]) for i,j in zip(y_test, predictions) if i != j]
-    print(len(incorrect))
-    print(f"Accuracy: {accuracy_test(y_test, predictions)}")
+    if test_acc:
+        # Test accuracy
+        predictions = model.predict(X_test)
+        incorrect = [':'.join([all_labels[i], all_labels[j]]) for i,j in zip(y_test, predictions) if i != j]
+        print(len(incorrect))
+        print(f"Accuracy: {accuracy_test(y_test, predictions)}")
 
-    # Test confusion
-    if args.debug:
-        conf_mat = confusion_matrix(y_test, predictions)
-        disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
-        disp.plot()
-        plt.show()
-        print(f"Conf mat: \n{conf_mat}")
+        # Test confusion
+        if args.debug:
+            conf_mat = confusion_matrix(y_test, predictions)
+            disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=all_labels)
+            disp.plot()
+            plt.show()
+            print(f"Conf mat: \n{conf_mat}")
 
     # Predict outputs
     output = model.predict(X_test)

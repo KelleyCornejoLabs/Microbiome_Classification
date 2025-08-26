@@ -167,5 +167,10 @@ models/
 data/
 
 scripts/__pycache__/
+scripts/produce_figures/tmp_*
+scripts/produce_figures/*.csv
+scripts/produce_figures/*.jpeg
 
 scratch/
+
+data/

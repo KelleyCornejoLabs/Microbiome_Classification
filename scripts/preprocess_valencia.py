@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description="This tool creates reformats the da
 required = parser.add_argument_group("Required arguments")
 required.add_argument("-i", "--input", help="Path to input CSV file",required=True)
 required.add_argument("-o","--output", help="Output file with Valencia acceptable data")
+required.add_argument("-kl","--keep-labels", action=argparse.BooleanOptionalAction, help="Keep labels from data", default=False)
 
 #reading arguments into parser
 args = parser.parse_args()
@@ -26,7 +27,11 @@ except FileNotFoundError:
     print("Invalid path")
 
 
-cols_to_remove = ['Subject_number','HC_CST', 'HC_subCST','Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim','IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim','IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim']
+cols_to_remove = ['Subject_number','HC_CST','Val_CST','Val_subCST','I-A_sim','I-B_sim','II_sim','III-A_sim','III-B_sim','IV-A_sim','IV-B_sim','IV-C0_sim','IV-C1_sim','IV-C2_sim','IV-C3_sim','IV-C4_sim','V_sim']
+
+if not args.keep_labels:
+    cols_to_remove.append('HC_subCST')
+
 for col in cols_to_remove:
     try:
         data = data.drop(columns=[col])
