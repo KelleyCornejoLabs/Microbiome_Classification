@@ -17,46 +17,43 @@ fi
 TMP_DIR="tmp_fig_1_and_2"
 
 # Path to cloned VALENCIA github repo root
-VALENCIA_REPO=""
-# VALENCIA_REPO="/data/b/class_microbiome/VALENCIA/"
+# VALENCIA_REPO=""
+VALENCIA_REPO="/data/b/class_microbiome/VALENCIA/"
 if [[ "$VALENCIA_REPO" = "" ]]; then
     echo "ERR: Path to VALENCIA not specified. Please specify using VALENCIA_REPO"
     exit 1
 fi
 
-# Raw VALENCIA data stored in data directory
-VALENCIA_DATA="$VALENCIA_REPO/Publication_materials/Data_and_metadata/all_samples_taxonomic_composition_data.csv"
-
-# Check if data file exists
-if [ ! -f $VALENCIA_DATA ]; then
-    echo "VALENCIA all_samples_taxononmic_composition_data.csv not found in the following path:"
-    echo "$VALENCIA_DATA"
-    exit 1
-fi
+RAVEL_DATA="../../data/vaginal/Ravel"
 
 # Start with clean empty temp directory
-rm -rf $TMP_DIR
-mkdir $TMP_DIR
+# rm -rf $TMP_DIR
+# mkdir $TMP_DIR
 
-ALL_DATA_FORMATTED="$TMP_DIR/valencia_formatted_full.csv"
+ALL_DATA_FORMATTED="$RAVEL_DATA/ravel_formatted_full.csv"
 
 # Data used to train 60/20/20 stratabionn model
-PREFIX_DATA_60="$TMP_DIR/formatted_60"
+PREFIX_DATA_60="$RAVEL_DATA/formatted_60"
 TRAIN_DATA_60="${PREFIX_DATA_60}_train.csv"
 TEST_DATA_60="${PREFIX_DATA_60}_test.csv"
 VALIDATE_DATA_60="${PREFIX_DATA_60}_validation.csv"
 VALIDATE_DATA_60_NO_LBL="${PREFIX_DATA_60}_validation_unlabeled.csv"
 
 # Data used to train 80/10/10 stratabionn model
-PREFIX_DATA_80="$TMP_DIR/formatted_80"
+PREFIX_DATA_80="$RAVEL_DATA/formatted_80"
 TRAIN_DATA_80="${PREFIX_DATA_80}_train.csv"
 TEST_DATA_80="${PREFIX_DATA_80}_test.csv"
 VALIDATE_DATA_80="${PREFIX_DATA_80}_validation.csv"
 VALIDATE_DATA_80_NO_LBL="${PREFIX_DATA_80}_validation_unlabeled.csv"
 
-# Generated centroids
-VALENCIA_CENTROIDS_60="$TMP_DIR/centroids_60.csv"
-VALENCIA_CENTROIDS_80="$TMP_DIR/centroids_80.csv"
+# Centroids
+VALENCIA_CENTROIDS_STOCK="$VALENCIA_REPO/CST_centroids_012920.csv"
+# VALENCIA_CENTROIDS_60="$TMP_DIR/centroids_60.csv"
+# VALENCIA_CENTROIDS_80="$TMP_DIR/centroids_80.csv"
+
+# Paths to store trained Stratabionn models
+MODEL_PATH_60="$TMP_DIR/classifier_60"
+MODEL_PATH_80="$TMP_DIR/classifier_80"
 
 # Classified data paths
 CLASSIFIED_STRATABIONN_80="$TMP_DIR/stratabionn_classified_80"
@@ -66,48 +63,36 @@ CLASSIFIED_VALENCIA_80="$TMP_DIR/valencia_classified_80"
 CLASSIFIED_RF_80="$TMP_DIR/rf_classified_80"
 CLASSIFIED_RF_60="$TMP_DIR/rf_classified_60"
 
-# Generate all data reformatted for classification
-echo "Generating formatted input data of entire dataset"
-python3 ../preprocess_valencia.py -i $VALENCIA_DATA -o $ALL_DATA_FORMATTED
-
-echo "Generating Test/Train/Validation data (60/20/20 and 80/10/10)"
-
-# Generate 60/20/20 Test/train/validation split
-python3 ../make_test_train_split.py -i $VALENCIA_DATA -o $PREFIX_DATA_60 -v 20 -t 0.03
-
-# Generate 80/10/10 Test/train/validation split
-python3 ../make_test_train_split.py -i $VALENCIA_DATA -o $PREFIX_DATA_80 -s 80 -v 10 -t 0.03
-
 echo "Train a model using Stratabionn and classify validation data"
 
 # Train and classify using 60/20/20 data
-python3 ../nn_classifier.py -itr $TRAIN_DATA_60 -ite $TEST_DATA_60 -p $PREFIX_DATA_60
-python3 ../nn_classifier.py -ite $VALIDATE_DATA_60 -p $PREFIX_DATA_60 -out $CLASSIFIED_STRATABIONN_60 -cl
+#python3 ../nn_classifier.py -itr $TRAIN_DATA_60 -ite $TEST_DATA_60 -p $MODEL_PATH_60 -tm 3 -wip
+# python3 ../nn_classifier.py -ite $VALIDATE_DATA_60 -p $MODEL_PATH_60 -out $CLASSIFIED_STRATABIONN_60 -cl
 
 # Train and classify using 80/10/10 data
-python3 ../nn_classifier.py -itr $TRAIN_DATA_80 -ite $TEST_DATA_80 -p $PREFIX_DATA_80
-python3 ../nn_classifier.py -ite $VALIDATE_DATA_80 -p $PREFIX_DATA_80 -out $CLASSIFIED_STRATABIONN_80 -cl
+#8python3 ../nn_classifier.py -itr $TRAIN_DATA_80 -ite $TEST_DATA_80 -p $MODEL_PATH_80 -tm 3 -wip
+# python3 ../nn_classifier.py -ite $VALIDATE_DATA_80 -p $MODEL_PATH_80 -out $CLASSIFIED_STRATABIONN_80 -cl
 
 # Classify using Valencia
-echo "Generating VALENCIA centroids"
-python3 ../centroids.py $TRAIN_DATA_60 -o $VALENCIA_CENTROIDS_60 -l HC_subCST -ndc sampleID,read_count
-python3 ../centroids.py $TRAIN_DATA_80 -o $VALENCIA_CENTROIDS_80 -l HC_subCST -ndc sampleID,read_count
+# echo "Generating VALENCIA centroids"
+# python3 ../centroids.py $TRAIN_DATA_60 -o $VALENCIA_CENTROIDS_60 -l HC_subCST -ndc sampleID,read_count
+# python3 ../centroids.py $TRAIN_DATA_80 -o $VALENCIA_CENTROIDS_80 -l HC_subCST -ndc sampleID,read_count
 
-echo "Generating unlabeled validation set for VALENCIA"
-# Drop labels for VALENCIA
-python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_60').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_60_NO_LBL', index=False)"
-python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_80').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_80_NO_LBL', index=False)"
-# python ../preprocess_valencia.py  -i $VALIDATE_DATA_60 -o $VALIDATE_DATA_60_NO_LBL
-# python ../preprocess_valencia.py  -i $VALIDATE_DATA_80 -o $VALIDATE_DATA_80_NO_LBL
+# echo "Generating unlabeled validation set for VALENCIA"
+# # Drop labels for VALENCIA
+# python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_60').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_60_NO_LBL', index=False)"
+# python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_80').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_80_NO_LBL', index=False)"
 
 echo "Running VALENCIA"
-python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_60 -i $VALIDATE_DATA_60_NO_LBL -o $CLASSIFIED_VALENCIA_60
-python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_80 -i $VALIDATE_DATA_80_NO_LBL -o $CLASSIFIED_VALENCIA_80
+# python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_60 -i $VALIDATE_DATA_60_NO_LBL -o $CLASSIFIED_VALENCIA_60
+# python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_80 -i $VALIDATE_DATA_80_NO_LBL -o $CLASSIFIED_VALENCIA_80
+# python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_STOCK -i $VALIDATE_DATA_60_NO_LBL -o $CLASSIFIED_VALENCIA_60
+# python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_STOCK -i $VALIDATE_DATA_80_NO_LBL -o $CLASSIFIED_VALENCIA_80
 
 # Classify using random forest
 echo "Running Random forest classifiers"
-python3 ../random_forest_classifier.py -itr $TRAIN_DATA_60 -ite $VALIDATE_DATA_60 -o $CLASSIFIED_RF_60.csv -dbg
-python3 ../random_forest_classifier.py -itr $TRAIN_DATA_80 -ite $VALIDATE_DATA_80 -o $CLASSIFIED_RF_80.csv -dbg
+# python3 ../random_forest_classifier.py -itr $TRAIN_DATA_60 -ite $VALIDATE_DATA_60 -o $CLASSIFIED_RF_60.csv -dbg
+# python3 ../random_forest_classifier.py -itr $TRAIN_DATA_80 -ite $VALIDATE_DATA_80 -o $CLASSIFIED_RF_80.csv -dbg
 
 # TODO: Replace this with better classifications with VALENCIA
 # IF we decide it would be better to generate custom centroids. Might be better to use stock

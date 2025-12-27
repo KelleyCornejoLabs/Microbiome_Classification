@@ -36,7 +36,7 @@ except:
     exit()
 
 try:
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score, recall_score, precision_score
     skl = True
 except:
     print("Optional package sklearn not available")
@@ -81,7 +81,8 @@ def str_norm(x: str):
 
     # Remove any prefix
     if x[1] == '_':
-        x = x[2:]
+        start = 3 if x[2] == '_' else 2
+        x = x[start:]
 
     # Return lower_camel_case
     return x
@@ -468,6 +469,38 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
         accuracies.append([ith_choice[j] == lbls[j] for j in range(len(ith_choice))].count(True))
 
     return accuracies
+
+# Evaluate feature importance using the model. Return dict of each feature's importance
+def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
+                          features: list[str], metrics: list[str] = ["f1", "recall", "precision"]) -> dict[str, float]:
+
+    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
+    print("Running perterbation analysis...")
+    with torch.inference_mode():
+        test_predictions = model(data).cpu().numpy()
+
+    print(lbls.cpu().numpy())
+    print(test_predictions)
+    baselines = {m:metric_functions[m](lbls.cpu().numpy(), test_predictions, average="weighted") for m in metrics}
+    
+    effects = {f:{m:0 for m in metrics} for f in features}
+
+    for i, feat in enumerate(features):
+        data_cpy = data.detach().clone()
+        feature = data_cpy[:,i].cpu().numpy()
+        permuted = torch.Tensor(np.random.permutation(feature)).to(device)
+        data_cpy[:,i] = permuted
+
+        # Test accuracy on permuted data
+        with torch.inference_mode():
+            test_predictions = model(data_cpy).cpu().numpy()
+
+        for m in metrics:
+            effects[feat][m] = baselines[m] - metric_functions[m](lbls, test_predictions, average="weighted")
+
+    print("Writing analysis...")
+    df = pd.DataFrame(effects)
+    df.to_csv("test_effects.csv")
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
@@ -1062,7 +1095,7 @@ if __name__ == "__main__":
     arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
     arguments.add_argument("-hn","--hidden-neurons", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=True)
-    arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on signigicant parameters", default=False)
+    arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on significant parameters", default=False)
     arguments.add_argument("-ta","--test-accuracy", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test and check accuracy", default=False)
     arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)
     arguments.add_argument("-i","--info", action=argparse.BooleanOptionalAction, help="Print info about a model", default=False)
@@ -1161,7 +1194,6 @@ if __name__ == "__main__":
             
         # Latest might not be best performer (which is what gets saved)
         classifier, _, _ = load_model(path, debug=debug)
-        
 
         # Evaluate the model and plot the correlations
         if debug:
@@ -1216,6 +1248,9 @@ if __name__ == "__main__":
 
         print("Correct guesses\n1st guess, 2nd guess, ...")
         print(top_n_accuracy(classifier, X_test, y_test))
+
+        metrics = ["f1", "recall", "precision"]
+        perterbation_analysis(classifier, X_test, y_test, keys, metrics)
 
     elif info:
         # Load model and print info

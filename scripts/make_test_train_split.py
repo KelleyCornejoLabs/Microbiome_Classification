@@ -157,8 +157,8 @@ def split(data, split, tolerance, labeled, validation_split=None):
             print(f"Validation number: {train_n}:{train_n+val_n}    {val_n}")
             print(f"Testing number: {train_n+val_n}:{len(subCST_entries)}    {len(subCST_entries)-(train_n+val_n)}")
             train_set = pd.concat([train_set, subCST_entries[:train_n]])
-            val_set = pd.concat([test_set, subCST_entries[train_n:train_n+val_n]])
-            test_set = pd.concat([val_set, subCST_entries[train_n+val_n:]])
+            test_set = pd.concat([test_set, subCST_entries[train_n:train_n+val_n]])
+            val_set = pd.concat([val_set, subCST_entries[train_n+val_n:]])
 
 
     # Check data against unsplit data by proportion of each label type
