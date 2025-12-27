@@ -697,20 +697,6 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
 
-colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
-    (91, 142, 197, 1),
-    (125, 197, 236, 1),
-    (59, 160, 142, 1),
-    (19, 108, 45, 1),
-    (143, 142, 45, 1),
-    (217, 187, 108, 1),
-    (91, 19, 0, 1),
-    (198, 91, 108, 1),
-    (161, 59, 91, 1),
-    (125, 31, 76, 1),
-    (160, 59, 142, 1),
-    (220, 20, 60, 1)]])
-
 # Store all data relating to data visualization and associated callbacks
 class Plotter:
     feature_1 = 0
@@ -729,6 +715,20 @@ class Plotter:
     def update_scatter(self):
 
         self.ax.clear()
+
+        colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
+            (91, 142, 197, 1),
+            (125, 197, 236, 1),
+            (59, 160, 142, 1),
+            (19, 108, 45, 1),
+            (143, 142, 45, 1),
+            (217, 187, 108, 1),
+            (91, 19, 0, 1),
+            (198, 91, 108, 1),
+            (161, 59, 91, 1),
+            (125, 31, 76, 1),
+            (160, 59, 142, 1),
+            (220, 20, 60, 1)]])
 
         s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
         
@@ -766,7 +766,7 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
                       all_labels: list[str], keys: list[str]) -> None:
     """Plot the predicted class on 2d plot with two chosen features as x and y axis"""
 
-    if not plt:
+    if not mpl:
         print("Matplot required for plot_correlations.")
         return
 
@@ -966,7 +966,8 @@ def rename_best (path: str, best: int, models: int):
 
     os.rename(f"{path}_{best}_metrics.txt", f"{path}_metrics.txt")
     os.rename(f"{path}_{best}_nn.pt", f"{path}_nn.pt")
-    os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
+    if mpl:
+        os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
 
     # Remove other models, skipping best
     for i in range(models):
@@ -975,7 +976,8 @@ def rename_best (path: str, best: int, models: int):
 
         os.remove(f"{path}_{i}_metrics.txt")
         os.remove(f"{path}_{i}_nn.pt")
-        os.remove(f"{path}_{i}_plt.png")
+        if mpl:
+            os.remove(f"{path}_{i}_plt.png")
 
 # Classify the samples in this file and add the classification to the output file
 def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[str], 
