@@ -36,7 +36,7 @@ except:
     exit()
 
 try:
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score, recall_score, precision_score
     skl = True
 except:
     print("Optional package sklearn not available")
@@ -81,7 +81,8 @@ def str_norm(x: str):
 
     # Remove any prefix
     if x[1] == '_':
-        x = x[2:]
+        start = 3 if x[2] == '_' else 2
+        x = x[start:]
 
     # Return lower_camel_case
     return x
@@ -99,7 +100,7 @@ def get_all_labels(path_train: str, path_test: str, debug: bool = False):
 
     except FileNotFoundError:
         # Error and exit if couldn't load
-        print(f"ERR: Could not load input data from {path}")
+        print(f"ERR: Could not load input data from {path_train} or {path_test}")
         exit()
 
     # Check if data is labeled
@@ -213,6 +214,7 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
         # impact the accuracy of more common classes a lot
 
         # Return normalized pervelance stats for the data, for weighting SGD
+        # print("Lbls:", all_labels, "entries:", entries)
         ordered_prevelence = torch.tensor([1/entries[all_labels[i]] if all_labels[i] in entries else 0 for i in range(len(all_labels))]).to(device)
         ordered_prevelence *= 1/ordered_prevelence.min()
 
@@ -265,8 +267,8 @@ def load_file(path: str, expect_labeled: bool, drop: None|list[str] = [],
 
     # Normalize the columns based on count data to adjust for sample 'quality'
     normalized_data = normalized_data.div(normalized_data.sum(axis=1), axis=0)
-    normalized_data[normalized_data.isnull()] = 1.0e-5
-    normalized_data[normalized_data.eq(0)] = 1.0e-5
+    normalized_data[normalized_data.isnull()] = 0#1.0e-5
+    # normalized_data[normalized_data.eq(0)] = 1.0e-5
 
     # Perform the requested normalizations
     if norm == "log":
@@ -469,6 +471,38 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
     return accuracies
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
+def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
+                          features: list[str], metrics: list[str] = ["f1", "recall", "precision"]) -> dict[str, float]:
+
+    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
+    print("Running perterbation analysis...")
+    with torch.inference_mode():
+        test_predictions = model(data).cpu().numpy()
+
+    print(lbls.cpu().numpy())
+    print(test_predictions)
+    baselines = {m:metric_functions[m](lbls.cpu().numpy(), test_predictions, average="weighted") for m in metrics}
+    
+    effects = {f:{m:0 for m in metrics} for f in features}
+
+    for i, feat in enumerate(features):
+        data_cpy = data.detach().clone()
+        feature = data_cpy[:,i].cpu().numpy()
+        permuted = torch.Tensor(np.random.permutation(feature)).to(device)
+        data_cpy[:,i] = permuted
+
+        # Test accuracy on permuted data
+        with torch.inference_mode():
+            test_predictions = model(data_cpy).cpu().numpy()
+
+        for m in metrics:
+            effects[feat][m] = baselines[m] - metric_functions[m](lbls, test_predictions, average="weighted")
+
+    print("Writing analysis...")
+    df = pd.DataFrame(effects)
+    df.to_csv("test_effects.csv")
+
+# Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
                        features: list[str]) -> dict[str, float]:
     """Given a model, data, and labels, return a dictionary containing the importance 
@@ -512,7 +546,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
           metrics_interval: int, thresh: float, loss_type: str, optim_type: str, 
           linear: bool, all_labels: list[str], ordered_prevalence: torch.Tensor, 
           path: str, structure: str, keys: list[str], optim: torch.optim.Optimizer|None = None, 
-          debug: bool = False, patience: int = 50, write_file: bool = True) -> float:
+          debug: bool = False, patience: int = 50, write_file: bool = True, use_op = False) -> float:
     """Train model on given data with given hyperparameters and return max accuracy. Latest version of model may not be 
     best peforming on testing data, so load the model after training to get it"""
 
@@ -526,7 +560,9 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
 
     # Set up optimizer/loss
 
-    if loss_type == "ce":
+    # Seems to make no difference
+    if loss_type == "ce" and use_op:
+        print("INFO: Using inverse prevelance weighting")
         loss_fn = losses[loss_type](weight=ordered_prevalence)
     else:
         loss_fn = losses[loss_type]()
@@ -540,7 +576,7 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
     # NOTE: Use a different lr_scheduler for SGD
     #if optim_type != "sgd":
     if patience != 0:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.2, patience=patience, verbose=debug)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, factor=0.2, patience=patience)
 
     # NLLLoss requires scalars, not one-hot vectors
     if loss_type == "nll":
@@ -558,6 +594,15 @@ def train(classifier: nn.Sequential, X_train: torch.Tensor, y_train: torch.Tenso
     # Only save best model
     max_acc = 0
 
+    # Set model to train mode and move to device only once
+    classifier.train()
+    classifier.to(device)
+    X_train = X_train.to(device)
+    y_train = y_train.to(device)
+    X_test = X_test.to(device)
+    y_test = y_test.to(device)
+    torch.cuda.empty_cache()
+    
     for epoch in range(max_epochs):
         # Forward pass
         y_predictions = classifier(X_train)
@@ -816,7 +861,7 @@ def load_model(path: str, keys: None|list[str] = None, return_features: bool = F
 
     # Load 'checkpoint'
     try:
-        checkpoint = torch.load(path + "_nn.pt")
+        checkpoint = torch.load(path + "_nn.pt", weights_only=False)
     except:
         print(f"Couldn't read {path}_nn.pt")
         exit(1)
@@ -883,7 +928,7 @@ def get_model_info(path: str) -> tuple[dict, str, list[str], str, float, dict]:
 
     # Load 'checkpoint' dict
     try:
-        checkpoint = torch.load(path + "_nn.pt")
+        checkpoint = torch.load(path + "_nn.pt", weights_only=False)
     except:
         print(f"Couldn't read {path}_nn.pt")
         exit(1)
@@ -1052,7 +1097,7 @@ if __name__ == "__main__":
     arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
     arguments.add_argument("-hn","--hidden-neurons", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=True)
-    arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on signigicant parameters", default=False)
+    arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on significant parameters", default=False)
     arguments.add_argument("-ta","--test-accuracy", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test and check accuracy", default=False)
     arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)
     arguments.add_argument("-i","--info", action=argparse.BooleanOptionalAction, help="Print info about a model", default=False)
@@ -1062,6 +1107,7 @@ if __name__ == "__main__":
     arguments.add_argument("-rr", "--regex-remove", help="Method to use for normalizing data. none (default), log, tmm, rle", default="")
     arguments.add_argument("-dr","--dropout", type=float, help="Dropout layer parameter", default=0.3)
     arguments.add_argument("-it","--importance-thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
+    arguments.add_argument("-wip", "--weight-inverse-proportional", action=argparse.BooleanOptionalAction, help="Enables weighting of classes inversely proportional to their prevelance during loss calculation", default=False)
 
 
     # Parse arguments
@@ -1086,6 +1132,7 @@ if __name__ == "__main__":
     load = args.load
     dropout = args.dropout
     importance = args.importance_thresh
+    use_ordered_prevelance = args.weight_inverse_proportional
 
     regex_remove = args.regex_remove.split(",")
 
@@ -1108,6 +1155,9 @@ if __name__ == "__main__":
         X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = load_data(args.input_train, args.input_test,
                                                                                        debug=debug, norm=norm_fn,
                                                                                        regex_remove=regex_remove)
+        
+        # print(f"Ops: {ordered_prevelence}")
+        # exit(0)
 
         # Determine hidden neurons as (2/3)*input + output
         if args.hidden_neurons == None:
@@ -1123,7 +1173,7 @@ if __name__ == "__main__":
             classifier, structure, optim = load_model(path, debug=debug)
             train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                   args.loss, args.optim, linear, all_labels, ordered_prevelence, path, structure, keys, 
-                  optim=optim, patience=args.patience, debug=debug)
+                  optim=optim, patience=args.patience, debug=debug, use_op=use_ordered_prevelance)
 
         elif load:
             if debug: print(f"Loading {path + '_nn.pt'}")
@@ -1137,7 +1187,7 @@ if __name__ == "__main__":
                 classifier, structure, optim = generate_model(linear, len(X_train[0]), hidden, len(y_train[0]), debug, droprate=dropout)
                 acc = train(classifier, X_train, y_train, X_test, y_test, lr, max_epochs, metrics_interval, thresh, 
                             args.loss, args.optim, linear, all_labels, ordered_prevelence, f"{path}_{i}", structure, keys, 
-                            optim=optim, patience=args.patience, debug=debug)
+                            optim=optim, patience=args.patience, debug=debug, use_op=use_ordered_prevelance)
                 
                 accuracies.append(acc)
 
@@ -1146,12 +1196,29 @@ if __name__ == "__main__":
             
         # Latest might not be best performer (which is what gets saved)
         classifier, _, _ = load_model(path, debug=debug)
-        
 
         # Evaluate the model and plot the correlations
         if debug:
             test(classifier, X_test, y_test, all_labels)
             plot_correlations(classifier, X_test, y_test, all_labels, keys)
+
+        if train_simple:
+            if debug: print("Training simplified")
+            # Find the sorted imporrtances of each feature, then train and test a network on the importnant features
+            sorted_importances = feature_importance(classifier, X_test, y_test, keys)
+
+            Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
+                                                                                 sorted_importances, importance, lr, 
+                                                                                 max_epochs, metrics_interval, thresh, 
+                                                                                 args.loss, args.optim, linear, path, 
+                                                                                 simple_cols, patience=args.patience, 
+                                                                                 debug=debug, models = args.train_multiple, 
+                                                                                 norm=norm_fn, regex_remove=regex_remove)
+
+            # Evaluate model and plot correlations
+            if debug:
+                test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
+                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
 
     elif classify:
         # TODO
@@ -1184,6 +1251,9 @@ if __name__ == "__main__":
         print("Correct guesses\n1st guess, 2nd guess, ...")
         print(top_n_accuracy(classifier, X_test, y_test))
 
+        metrics = ["f1", "recall", "precision"]
+        perterbation_analysis(classifier, X_test, y_test, keys, metrics)
+
     elif info:
         # Load model and print info
         model_state, structure, all_labels, features, optim_type, lr, optim_state, version = get_model_info(path)
@@ -1198,29 +1268,3 @@ if __name__ == "__main__":
         print(f"It predicts {len(all_labels)} classes: {', '.join(all_labels)}") 
         print(f"Optimizer used: {optim_type} Final learning rate: {lr}") 
         print(f"Model trained with StrataBionn version {version} (currently using version {VERSION})") 
-    
-
-    if train_simple:
-        if debug: print("Training simplified")
-        # Find the sorted imporrtances of each feature, then train and test a network on the importnant features
-        
-        if args.focus_columns == None:
-            sorted_importances = feature_importance(classifier, X_test, y_test, keys)
-        else:
-            sorted_importances = {}
-
-        Simple_classifier, SX_test, Sy_test, Sall_lbls = train_simpler_model(args.input_train, args.input_test, 
-                                                                             sorted_importances, importance, lr, 
-                                                                             max_epochs, metrics_interval, thresh, 
-                                                                             args.loss, args.optim, linear, path, 
-                                                                             simple_cols, patience=args.patience, 
-                                                                             debug=debug, models = args.train_multiple, 
-                                                                             norm=norm_fn, regex_remove=regex_remove)
-
-        # Evaluate model and plot correlations
-        if debug:
-            test(Simple_classifier, SX_test, Sy_test, Sall_lbls)
-            if args.focus_columns == None:
-                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(sorted_importances.keys()))
-            else:
-                plot_correlations(Simple_classifier, SX_test, Sy_test, Sall_lbls, list(args.focus_columns))

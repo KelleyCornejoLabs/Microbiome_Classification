@@ -1,4 +1,4 @@
-# Microbiome Classification
+# StrataBioNN Microbiome Classification
 This repository contains the scripts for the Microbiome Classification project
 
 ![Logo](logo.png)

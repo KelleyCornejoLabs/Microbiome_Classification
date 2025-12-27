@@ -45,6 +45,7 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
                 continue    # Column wasn't there. Likely preprocessed
             
     # Can't create this row. If it doesn't exist, must be test data
+    print("INFO: Label col")
     if label_col == "None":
         print("Unlabeled data")
     elif not label_col in data.keys():
@@ -52,6 +53,7 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
         exit(1)
 
     # Make sure row exists, if not create it
+    print("INFO: Sample ID")
     if sample_id_col =="None":
         # SampleIDs are [0,n-1]
         data['sampleID'] = range(len(data))
@@ -60,20 +62,24 @@ def format_VALENCIA(data, read_count_col='total_reads', sample_id_col='Sample_nu
         print(f"sampleID equivalent '{sample_id_col}' not found. Use None to fill with range(n)")
         exit(1)
 
+    print("INFO: Read count")
     if read_count_col == "None":
         # Sum all count data columns to get total for each row, and add it as a column
         non_count = [sample_id_col]
         if label_col != "None": non_count += [label_col]
-        total = lambda i:sum(map(lambda x:float(x), list(data.drop(non_count, axis=1).iloc[i])))
-        row_totals = [total(row) for row in range(len(data))]
-        data['read_count'] = row_totals
+        # total = lambda i:sum(map(lambda x:float(x), list(data.drop(non_count, axis=1).iloc[i])))
+        # row_totals = [total(row) for row in range(len(data))]
+        # data['read_count'] = row_totals
+        data['read_count'] = data.drop(columns=non_count).sum(axis=1)
     elif not read_count_col in data.keys():
         print(f"read_count equivalent '{read_count_col}' not found. Use None if already normalized")
         exit(1)
 
     # If corresponding row exists, rename it for valencia/nn_classifier
+    print("INFO: Rename")
     data = data.rename(columns={read_count_col:'read_count', sample_id_col:'sampleID', label_col:'HC_subCST'})
     
+    print("INFO: Label col")
     if label_col != "None":
         data["HC_subCST"] = list(map(lambda x:str(x), list(data["HC_subCST"])))
 
@@ -112,7 +118,12 @@ def split(data, split, tolerance, labeled, validation_split=None):
     if not labeled:
         train_count = round((split / 100) * len(data))
         print(f"Train: {train_count}/{len(data)}")
-        return shuffle(data[:train_count]), shuffle(data[train_count:])
+
+        if validation_split != None:
+            val_count = round((validation_split / 100) * len(data))
+            return shuffle(data[:train_count]), shuffle(data[train_count+val_count:]), shuffle(data[train_count:train_count+val_count])
+        else:
+            return shuffle(data[:train_count]), shuffle(data[train_count:])
 
     # Found out what proportion of the data each CST makes. 
     entries = data.groupby(["HC_subCST"]).count()['sampleID']
@@ -131,6 +142,7 @@ def split(data, split, tolerance, labeled, validation_split=None):
 
     subCSTs = list(entries.keys())
     for subCST in subCSTs:
+        print(f"For cst: {subCST}")
         subCST_entries = data.loc[data["HC_subCST"] == subCST]
 
         subCST_entries = subCST_entries.sample(frac=1).reset_index(drop=True) # Shuffle and return all data with new indicies
@@ -141,6 +153,9 @@ def split(data, split, tolerance, labeled, validation_split=None):
         else:
             train_n = train_count_by_category[subCST]
             val_n = validation_count_by_category[subCST]
+            print(f"Training number: 0:{train_n}    {train_n}")
+            print(f"Validation number: {train_n}:{train_n+val_n}    {val_n}")
+            print(f"Testing number: {train_n+val_n}:{len(subCST_entries)}    {len(subCST_entries)-(train_n+val_n)}")
             train_set = pd.concat([train_set, subCST_entries[:train_n]])
             test_set = pd.concat([test_set, subCST_entries[train_n:train_n+val_n]])
             val_set = pd.concat([val_set, subCST_entries[train_n+val_n:]])
@@ -155,7 +170,7 @@ def split(data, split, tolerance, labeled, validation_split=None):
     test_total_entries = test_entries.sum()
     test_prevelance = test_entries/test_total_entries
 
-    if ((abs(train_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
+    if tolerance != -1 and ((abs(train_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
         problematic = set((abs(train_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
         problematic |= set((abs(test_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
 
@@ -181,7 +196,7 @@ def split(data, split, tolerance, labeled, validation_split=None):
         val_total_entries = val_entries.sum()
         val_prevelance = val_entries/val_total_entries
 
-        if ((abs(val_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
+        if tolerance != -1 and ((abs(val_prevelance - prevelance) > tolerance).any() or (abs(test_prevelance - prevelance) > tolerance).any()):
             problematic = set((abs(val_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
             problematic |= set((abs(test_prevelance - prevelance) > tolerance).loc[lambda x:x].index)
 
@@ -211,8 +226,6 @@ def write(train_set, test_set, path, validaiton_set = None):
 
     train_set.to_csv(train_path, index=False)
     test_set.to_csv(test_path, index=False)
-
-    print(f"Wrote: {train_path} and {test_path}")
 
     if not validaiton_set is None:
         validation_path = path + "_validation.csv"
@@ -249,7 +262,7 @@ if __name__ == "__main__":
     required.add_argument("-rc", "--read_counts", default=None, help="Column containing the number of reads for each sample")
     required.add_argument("-sid", "--sample_ids", default=None, help="Column contianing all sample IDs")
     required.add_argument("-lc", "--label_col", default=None, help="Column for community subtypes, renamed to HC_subCST")
-    required.add_argument("-tr", "--transpose", default="False", help="Set true if samples are aligned vertically")
+    required.add_argument("-tr", "--transpose", action=argparse.BooleanOptionalAction, default=False, help="Set true if samples are aligned vertically")
 
     # Read arguments into parser
     args = parser.parse_args()
@@ -277,7 +290,7 @@ if __name__ == "__main__":
         print("Inappropriate type for tolerance. Must be float")
         exit(1)
 
-    transpose = True if args.transpose == "True" else False if args.transpose == "False" else None
+    transpose = args.transpose
     if transpose == None:
         print(f"Transpose should be 'True' or 'False', not '{args.transpose}'")
         exit(1)
@@ -298,13 +311,15 @@ if __name__ == "__main__":
     print(data.head())
 
     # Remove duplicates TODO: Needs work
-    print(list(data.keys()).count("Actinobacteria"))
+    # print(list(data.keys()).count("Actinobacteria"))
     data = data.loc[:,~data.columns.duplicated()].copy()
-    print(list(data.keys()).count("Actinobacteria"))
+    # print(list(data.keys()).count("Actinobacteria"))
     
+    print("INFO: Formatting...")
     data = format_VALENCIA(data, read_count_col, sample_id_col, label_col, non_data)
     print(len(data))
 
+    print("INFO: Splitting...")
     if validation_split == None:
         train_set, test_set = split(data, train_split, tolerance, labeled)
         write(train_set, test_set, args.output)
