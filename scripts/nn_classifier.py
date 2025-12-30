@@ -471,36 +471,41 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
     return accuracies
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
-def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
-                          features: list[str], metrics: list[str] = ["f1", "recall", "precision"]) -> dict[str, float]:
+def perturbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor,
+                          features: list[str], all_labels: list[str], metrics: list[str] = ["f1", "recall", "precision", "accuracy"]) -> dict[str, float]:
 
-    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
+    lbls_argmax = lbls.argmax(dim=1).cpu().numpy()
+
+    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score, "accuracy": lambda x,y,average: np.sum(np.equal(x,y)).item()/len(y)}
     print("Running perterbation analysis...")
     with torch.inference_mode():
-        test_predictions = model(data).cpu().numpy()
+        test_predictions = model(data).argmax(dim=1).cpu().numpy()
 
-    print(lbls.cpu().numpy())
-    print(test_predictions)
-    baselines = {m:metric_functions[m](lbls.cpu().numpy(), test_predictions, average="weighted") for m in metrics}
-    
-    effects = {f:{m:0 for m in metrics} for f in features}
+    for m in metrics:
+        baselines = {c: 0 for c in all_labels}
 
-    for i, feat in enumerate(features):
-        data_cpy = data.detach().clone()
-        feature = data_cpy[:,i].cpu().numpy()
-        permuted = torch.Tensor(np.random.permutation(feature)).to(device)
-        data_cpy[:,i] = permuted
+        lbls_cst = lbls_argmax
+        predictions_cst = test_predictions
+        baselines = {c: metric_functions[m](lbls_cst[lbls_cst == i], predictions_cst[lbls_cst == i], average="weighted") for i,c in enumerate(all_labels)}
 
-        # Test accuracy on permuted data
-        with torch.inference_mode():
-            test_predictions = model(data_cpy).cpu().numpy()
+        effects = {f:{c: 0 for c in all_labels} for f in features}
 
-        for m in metrics:
-            effects[feat][m] = baselines[m] - metric_functions[m](lbls, test_predictions, average="weighted")
+        for i, feat in enumerate(features):
+            data_cpy = data.detach().clone()
+            feature = data_cpy[:,i]
+            permuted = torch.Tensor(np.random.permutation(feature))
+            data_cpy[:,i] = permuted
 
-    print("Writing analysis...")
-    df = pd.DataFrame(effects)
-    df.to_csv("test_effects.csv")
+            # Test accuracy on permuted data
+            with torch.inference_mode():
+                permuted_test_predictions = model(data_cpy).argmax(dim=1).cpu().numpy()
+
+            for idx, c in enumerate(all_labels):
+                effects[feat][c] = baselines[c] - metric_functions[m](lbls_cst[lbls_cst == idx], permuted_test_predictions[lbls_cst == idx], average="weighted")
+
+        print(f"Writing analysis for {m}...")
+        df = pd.DataFrame(effects).T.reset_index().rename(columns={"index":"feature"})
+        df.to_csv(f"perturbation_analysis_{m}.csv", index=False)
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
@@ -1251,8 +1256,8 @@ if __name__ == "__main__":
         print("Correct guesses\n1st guess, 2nd guess, ...")
         print(top_n_accuracy(classifier, X_test, y_test))
 
-        metrics = ["f1", "recall", "precision"]
-        perterbation_analysis(classifier, X_test, y_test, keys, metrics)
+        metrics = ["f1", "recall", "precision", "accuracy"]
+        perturbation_analysis(classifier, X_test, y_test, keys, all_labels, metrics)
 
     elif info:
         # Load model and print info
