@@ -3,21 +3,34 @@ This repository contains the scripts for the Microbiome Classification project
 
 ![Logo](logo.png)
 
-## Scripts
-### preprocess_valencia.py
-This script takes the data provided in the [VALENCIA project's repository](https://github.com/ravel-lab/VALENCIA) and preprocesses it into a format that can be used by VALENCIA. All scripts in this repository take .csv files in the same format as VALENCIA.
-### make_test_train_split.py
-For evaluation of each classification method, data from the VALENCIA project is split into a training and validation set. This tool creates those sets from the preprocessed data.
+## Main Scripts
 ### nn_classifier.py
 This script trains and deploys the neural network classifier for microbiome count data. It creates a file containing the network and a file containing metric data from the training process. For training, it takes a training set and test set as input. Use make_test_train_split.py for making the split. For comparing different model's performance, split the data once to reserve a validation set, then split the training data again to create the training/test sets for creating models.
-### nn_trainer.py
-This script trains multiple classifiers, and finds the most performant hyperperameters from those provided to search.
 ### random_forect_classifier.py
 This script trains a random forest classifier on the given training data and evaluates is accuracy based on the testing data.
+
+## Utility Scripts
+These scripts can be found in the utilities subdirectory
+### centroids.py
+This script can be used to generate a file containing CST centroids for use with the VALENCIA classifier
+### check_tolerances.py
+Checks the distribution of class labels for train/test/validation subsets against original dataset to report their tolerance. Tolerance is calaculated as `|(p_class_sub/p_class_super)-1|*100` where `p_class_sub` is the proportion of entries in a subset labeled as class X, while `p_class_super` is the proportion of entries in the superset labeled as class X. This analysis is performed for each subset (train, test, and validation)
 ### eval_valencia.py
 Not necessarily just for valencia. Takes the output file of the VALENCIA or neural classifier, and shows a confusion matrix and accuracy score for the classifiers.
 ### evaluate_valencia.sh
 Shell script that displays the accuracy of VALENCIA's predictions based on the file it was trained on, comparing it to the HC_subCST label for the heirarchical clustering results.
+### find_VAL_overlap.py
+Takes a list of files as an input. Used to find list of bacteria that match across studies to train 'simple' model for cross-study analysis
+### make_test_train_split.py
+For evaluation of each classification method, data from the VALENCIA project is split into a training and validation set. This tool creates those sets from the preprocessed data.
+### nn_trainer.py
+This script trains multiple classifiers, and finds the most performant hyperperameters from those provided to search.
+### oral_preprocessor.py
+Reformats data from [Manghi et al.](https://www.nature.com/articles/s41467-024-53934-7), and applies a novel K-means clustering based classification scheme to produce baseline oral microbiome dataset.
+### preprocess_valencia.py
+This script takes the data provided in the [VALENCIA project's repository](https://github.com/ravel-lab/VALENCIA) and preprocesses it into a format that can be used by VALENCIA. All scripts in this repository take .csv files in the same format as VALENCIA.
+### process_oral.sh
+This script runs the oral microbiome data preprocessor script, and then splits the resulting processed data into a training, testing, and validation subset.
 ### test_multiple.sh
 Does the same as `evaluate_valencia.sh` but on all models, and shows an accuracy score and confusion matrix for each
 
@@ -57,7 +70,7 @@ This section will outline the procedure used to classify samples from a differen
 ### Training a simple model for both datasets
 In order to apply the valencia classifications to our new data, we first need to find the overlap in these datasets, or the bacteria species which are found in both datasets. For this purpose we created the tool `find_VAL_overlap.py` found in this repository. Provided both datasets it will use the classifiers string normalization function to find species which are "the same". You can run the command below to get the common species.
 
-`python3 find_VAL_overlap.py -iv valencia_train.csv -i hickey_train.csv`
+`python3 find_VAL_overlap.py --files valencia_train.csv hickey_train.csv`
 
 This will produce a line saying `--For use in nn_classifier:--` followed by a comma seperated list of the the common bacteria.
 
