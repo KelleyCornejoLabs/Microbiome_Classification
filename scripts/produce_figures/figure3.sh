@@ -1,7 +1,7 @@
 #! /bin/bash
 # Produces pacmaps for all datasets,
 # France and Hickey for the vaginal,
-# and Hyuhm and Edlund for the oral,
+# and Hyuhm and Baker for the oral,
 # corresponding to figure 3
 
 set -eou pipefail
@@ -32,13 +32,13 @@ VAGINAL_DATA_DIR="$DATA_DIR/vaginal"
 
 HICKEY_DATA_DIR="$VAGINAL_DATA_DIR/Hickey"
 HYUHN_DATA_DIR="$ORAL_DATA_DIR/Hyuhn"
-EDLUND_DATA_DIR="$ORAL_DATA_DIR/Edlund"
+BAKER_DATA_DIR="$ORAL_DATA_DIR/Baker"
 FRANCE_DATA_DIR="$VAGINAL_DATA_DIR/France"
 MANGHI_DATA_DIR="$ORAL_DATA_DIR/Manghi"
 
 HICKEY_FORMATTED="$HICKEY_DATA_DIR/hickey_formatted.csv"
 HYUHN_FORMATTED="$HYUHN_DATA_DIR/hyuhn_formatted.csv"
-EDLUND_FORMATTED="$EDLUND_DATA_DIR/edlund_formatted.csv"
+BAKER_FORMATTED="$BAKER_DATA_DIR/baker_formatted.csv"
 FRANCE_FORMATTED="$FRANCE_DATA_DIR/france_formatted.csv"
 MANGHI_FORMATTED="$MANGHI_DATA_DIR/manghi_classified.csv"
 
@@ -57,7 +57,7 @@ echo "Generating figures 3 and 6"
 # python utilities.py --fig new_number_1 fig_3_6 --france-data  $FRANCE_FORMATTED \
 #                             --hickey-data $HICKEY_FORMATTED \
 #                             --hyuhn-data $HYUHN_FORMATTED \
-#                             --edlund-data $EDLUND_FORMATTED \
+#                             --baker-data $BAKER_FORMATTED \
 #                             --france-train $FRANCE_TRAIN \
 #                             --france-test $FRANCE_TEST \
 #                             --france-validate $FRANCE_VALIDATE
@@ -66,7 +66,7 @@ echo "Generating figures 3 and 6"
 # python utilities.py --fig supl_france_60_pacmap fig_3_6 --france-data  $FRANCE_FORMATTED \
 #                             --hickey-data $HICKEY_FORMATTED \
 #                             --hyuhn-data $HYUHN_FORMATTED \
-#                             --edlund-data $EDLUND_FORMATTED \
+#                             --baker-data $BAKER_FORMATTED \
 #                             --france-train $FRANCE_60_TRAIN \
 #                             --france-test $FRANCE_60_TEST \
 #                             --france-validate $FRANCE_60_VALIDATE
@@ -99,32 +99,32 @@ python3 $STRATABIONN_SCRIPT -ite $HICKEY_FORMATTED -cl -p $SIMPLE_MODEL_LOCATION
 #                           --common_cols $COMMON_COLS
 
 # python utilities.py fig_5 --hyuhn-data $HYUHN_FORMATTED \
-#                           --edlund-data $EDLUND_FORMATTED \
+#                           --baker-data $BAKER_FORMATTED \
 #                           --common_cols $COMMON_COLS
 
 exit 1
 
 # echo "Generating Test/Train/Validation data (60/20/20 and 80/10/10)"
 
-# EDLUND_PREFIX_DATA_80="$EDLUND_DATA_DIR/formatted_80"
-# EDLUND_TRAIN_DATA_80="${EDLUND_PREFIX_DATA_80}_train.csv"
-# EDLUND_TEST_DATA_80="${EDLUND_PREFIX_DATA_80}_test.csv"
-# EDLUND_VALIDATE_DATA_80="${EDLUND_PREFIX_DATA_80}_validation.csv"
+# BAKER_PREFIX_DATA_80="$BAKER_DATA_DIR/formatted_80"
+# BAKER_TRAIN_DATA_80="${BAKER_PREFIX_DATA_80}_train.csv"
+# BAKER_TEST_DATA_80="${BAKER_PREFIX_DATA_80}_test.csv"
+# BAKER_VALIDATE_DATA_80="${BAKER_PREFIX_DATA_80}_validation.csv"
 
-# EDLUND_MODEL_LOCATION="$TMP_DIR/hickey_classifier"
-# EDLUND_SIMPLE_MODEL_LOCATION="$TMP_DIR/hickey_classifier_simplified"
+# BAKER_MODEL_LOCATION="$TMP_DIR/hickey_classifier"
+# BAKER_SIMPLE_MODEL_LOCATION="$TMP_DIR/hickey_classifier_simplified"
 
 # HYUHN_CLASSIFIED="$TMP_DIR/hyuhn_classified"
 
-# COMMON_COLS_ORAL=$(python3 $OVERLAP_SCRIPT -iv $EDLUND_FORMATTED -i $HYUHN_FORMATTED | tail -n 1)
+# COMMON_COLS_ORAL=$(python3 $OVERLAP_SCRIPT -iv $BAKER_FORMATTED -i $HYUHN_FORMATTED | tail -n 1)
 # echo "Common Cols Oral:"
 # echo $COMMON_COLS_ORAL
 
-# echo "Training classifier for Hyuhn data on Edlund dataset"
-# python3 $STRATABIONN_SCRIPT -itr $EDLUND_TRAIN_DATA_80 -ite $EDLUND_TEST_DATA_80 -f $COMMON_COLS_ORAL -p $EDLUND_MODEL_LOCATION -ts
+# echo "Training classifier for Hyuhn data on Baker dataset"
+# python3 $STRATABIONN_SCRIPT -itr $BAKER_TRAIN_DATA_80 -ite $BAKER_TEST_DATA_80 -f $COMMON_COLS_ORAL -p $BAKER_MODEL_LOCATION -ts
 
 # echo "Applying classifier to Hyuhn dataset"
-# python3 $STRATABIONN_SCRIPT -ite $HYUHN_FORMATTED -cl -p $EDLUND_SIMPLE_MODEL_LOCATION -out $HYUHN_CLASSIFIED
+# python3 $STRATABIONN_SCRIPT -ite $HYUHN_FORMATTED -cl -p $BAKER_SIMPLE_MODEL_LOCATION -out $HYUHN_CLASSIFIED
 
 # echo "Generating figure 6"
 
@@ -135,15 +135,15 @@ MANGHI_VALIDATE="$MANGHI_DATA_DIR/clustered_80_validation.csv"
 # python utilities.py fig_3_6 --france-data  $FRANCE_FORMATTED \
 #                             --hickey-data $HICKEY_FORMATTED \
 #                             --hyuhn-data $HYUHN_FORMATTED \
-#                             --edlund-data $EDLUND_FORMATTED \
+#                             --baker-data $BAKER_FORMATTED \
 #                             --france-train $MANGHI_TRAIN \
 #                             --france-test $MANGHI_TEST \
 #                             --france-validate $MANGHI_VALIDATE
 
-# EDLUND_PREFIX_DATA_80="$EDLUND_DATA_DIR/formatted_80"
-# EDLUND_TRAIN_DATA_80="${EDLUND_PREFIX_DATA_80}_train.csv"
-# EDLUND_TEST_DATA_80="${EDLUND_PREFIX_DATA_80}_test.csv"
-# EDLUND_VALIDATE_DATA_80="${EDLUND_PREFIX_DATA_80}_validation.csv"
+# BAKER_PREFIX_DATA_80="$BAKER_DATA_DIR/formatted_80"
+# BAKER_TRAIN_DATA_80="${BAKER_PREFIX_DATA_80}_train.csv"
+# BAKER_TEST_DATA_80="${BAKER_PREFIX_DATA_80}_test.csv"
+# BAKER_VALIDATE_DATA_80="${BAKER_PREFIX_DATA_80}_validation.csv"
 
 MANGHI_MODEL_LOCATION="$TMP_DIR/hickey_classifier"
 MANGHI_SIMPLE_MODEL_LOCATION="$TMP_DIR/hickey_classifier_simplified"
@@ -154,7 +154,7 @@ HYUHN_CLASSIFIED="$TMP_DIR/hyuhn_classified"
 # echo "Common Cols Oral:"
 # echo $COMMON_COLS_ORAL
 
-# echo "Training classifier for Hyuhn data on Edlund dataset"
+# echo "Training classifier for Hyuhn data on Baker dataset"
 # Probably reduce patience
 # python3 $STRATABIONN_SCRIPT -itr $MANGHI_TRAIN -ite $MANGHI_TEST -f $COMMON_COLS_ORAL -p $MANGHI_MODEL_LOCATION -ts
 

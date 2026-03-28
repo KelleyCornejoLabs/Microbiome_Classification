@@ -453,7 +453,7 @@ def fig_3(train_data, test_data, validate_data, figure=3):
     plt.savefig(f"fig{figure}.jpeg")
     plt.show()
 
-def plot_pacmaps(france_data, hickey_data, ashley_data, edlund_data, figure=3):
+def plot_pacmaps(france_data, hickey_data, ashley_data, baker_data, figure=3):
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 4))
 
     dfs = [france_data]#, hickey_data]
@@ -461,7 +461,7 @@ def plot_pacmaps(france_data, hickey_data, ashley_data, edlund_data, figure=3):
     nondata_cols = [["sampleID", "read_count"]]#, ["sampleID"]]
 
     if figure == 6:
-        dfs = [edlund_data, ashley_data]
+        dfs = [baker_data, ashley_data]
         label_col = ["HC_subCST", None]
         nondata_cols = [["sampleID"], ["sampleID", "read_count"]]
     
@@ -549,7 +549,7 @@ def plot_hickey_valencia_comparison(france_data, hickey_data, common_cols, figur
     plt.savefig(f"fig{figure}.jpeg")
     plt.show()
 
-def plot_3_study_classifications(baseline_data, study_1, study_2, common_cols, figure, study_1_name="Hyuhn", study_2_name="Edlund"):
+def plot_3_study_classifications(baseline_data, study_1, study_2, common_cols, figure, study_1_name="Hyuhn", study_2_name="Baker"):
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 5))
 
     base_common_data = extract_cols(baseline_data, common_cols)
@@ -678,12 +678,12 @@ def fig_3_6_main(args):
     france_path = args.france_data
     hickey_path = args.hickey_data
     hyuhn_path = args.hyuhn_data
-    edlund_path = args.edlund_data
+    baker_path = args.baker_data
 
     france_data = pd.read_csv(france_path)
     hickey_data = pd.read_csv(hickey_path)
     hyuhn_data = pd.read_csv(hyuhn_path)
-    edlund_data = pd.read_csv(edlund_path)
+    baker_data = pd.read_csv(baker_path)
 
     france_train = pd.read_csv(args.france_train)
     france_test = pd.read_csv(args.france_test)
@@ -694,7 +694,7 @@ def fig_3_6_main(args):
     else: fig = args.fig
 
     fig_3(france_train, france_test, france_validate, figure=fig)
-    # plot_pacmaps(france_data, hickey_data, hyuhn_data, edlund_data, figure=6)
+    # plot_pacmaps(france_data, hickey_data, hyuhn_data, baker_data, figure=6)
 
 def fig_4_main(args):
     france_path = args.france_data
@@ -765,7 +765,7 @@ if __name__ == "__main__":
     fig_3_6_group.add_argument("--france-data", help="Path to France et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--hickey-data", help="Path to Hickey et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--hyuhn-data", help="Path to Hyuhn et al. data (VALENCIA formatted)", type=str)
-    fig_3_6_group.add_argument("--edlund-data", help="Path to Edlund et al. data (VALENCIA formatted)", type=str)
+    fig_3_6_group.add_argument("--baker-data", help="Path to Baker et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--france-train", help="Path to training set of France data", type=str)
     fig_3_6_group.add_argument("--france-test", help="Path to testing set of France data", type=str)
     fig_3_6_group.add_argument("--france-validate", help="Path to validation set of France data", type=str)

@@ -164,14 +164,13 @@ scripts/nn_training_test.csv
 scripts/test_norm.py
 
 models/
-data/
 
 scripts/__pycache__/
 scripts/produce_figures/tmp_*
 scripts/produce_figures/*.csv
 scripts/produce_figures/*.jpeg
+scripts/produce_figures/fig3data
+scripts/produce_figures/old_ffigs
 
 scratch/
 scratch2/
-
-data/

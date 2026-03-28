@@ -6,7 +6,7 @@ TMP_DIR="tmp_fig_3_study"
 mkdir -p $TMP_DIR
 
 echo "Finding common bacteria species for all oral studies"
-COMMON_COLS_ORAL_3_STUDY=$(python3 $OVERLAP_SCRIPT --files $MANGHI_FORMATTED $HYUHN_FORMATTED $EDLUND_FORMATTED | tail -n 1)
+COMMON_COLS_ORAL_3_STUDY=$(python3 $OVERLAP_SCRIPT --files $MANGHI_FORMATTED $HYUHN_FORMATTED $BAKER_FORMATTED | tail -n 1)
 
 python3 -c "print('Found', len('$COMMON_COLS_ORAL_3_STUDY'.split(',')), 'common species')"
 echo $COMMON_COLS_ORAL_3_STUDY
@@ -20,18 +20,18 @@ THREE_STUDY_MODEL="$TMP_DIR/oral_classified_3_study"
 THREE_STUDY_MODEL_SIMPLIFIED="$TMP_DIR/oral_classified_3_study_simplified"
 
 HYUHN_CLASSIFIED_3_STUDY="$TMP_DIR/hyuhn_classified_3_study"
-EDLUND_CLASSIFIED_3_STUDY="$TMP_DIR/edlund_classified_3_study"
+BAKER_CLASSIFIED_3_STUDY="$TMP_DIR/baker_classified_3_study"
 
 echo "Training model..."
 # python3 $STRATABIONN_SCRIPT -itr $MANGHI_TRAIN -ite $MANGHI_TEST -f $COMMON_COLS_ORAL_3_STUDY -p $THREE_STUDY_MODEL -ts
 
 echo "Running classification..."
 # python3 $STRATABIONN_SCRIPT -ite $HYUHN_FORMATTED -cl -p $THREE_STUDY_MODEL_SIMPLIFIED -out $HYUHN_CLASSIFIED_3_STUDY
-# python3 $STRATABIONN_SCRIPT -ite $EDLUND_FORMATTED -cl -p $THREE_STUDY_MODEL_SIMPLIFIED -out $EDLUND_CLASSIFIED_3_STUDY
+# python3 $STRATABIONN_SCRIPT -ite $BAKER_FORMATTED -cl -p $THREE_STUDY_MODEL_SIMPLIFIED -out $BAKER_CLASSIFIED_3_STUDY
 
 # python utilities.py 3_study_pacmap --base-class   $MANGHI_FORMATTED \
 #                                    --test-1-class $HYUHN_CLASSIFIED_3_STUDY.csv \
-#                                    --test-2-class $EDLUND_CLASSIFIED_3_STUDY.csv \
+#                                    --test-2-class $BAKER_CLASSIFIED_3_STUDY.csv \
 #                                    --common_cols  $COMMON_COLS_ORAL_3_STUDY
 
 echo $THREE_STUDY_MODEL_SIMPLIFIED
