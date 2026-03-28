@@ -44,7 +44,8 @@ except:
 
 try:
     import matplotlib.pyplot as plt
-    from matplotlib.widgets import Button
+    from matplotlib.widgets import Button, TextBox
+    from matplotlib.text import Text
     from matplotlib.colors import ListedColormap
     mpl = True
 except:
@@ -474,14 +475,14 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
 def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
                           features: list[str], metrics: list[str] = ["f1", "recall", "precision"]) -> dict[str, float]:
 
+    lbl_argmax = lbls.argmax(dim=1).cpu().numpy()
+
     metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
     print("Running perterbation analysis...")
     with torch.inference_mode():
-        test_predictions = model(data).cpu().numpy()
+        test_predictions = model(data).argmax(dim=1).cpu().numpy()
 
-    print(lbls.cpu().numpy())
-    print(test_predictions)
-    baselines = {m:metric_functions[m](lbls.cpu().numpy(), test_predictions, average="weighted") for m in metrics}
+    baselines = {m:metric_functions[m](lbl_argmax, test_predictions, average="weighted") for m in metrics}
     
     effects = {f:{m:0 for m in metrics} for f in features}
 
@@ -493,10 +494,10 @@ def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.
 
         # Test accuracy on permuted data
         with torch.inference_mode():
-            test_predictions = model(data_cpy).cpu().numpy()
+            test_predictions = model(data_cpy).argmax(dim=1).cpu().numpy()
 
         for m in metrics:
-            effects[feat][m] = baselines[m] - metric_functions[m](lbls, test_predictions, average="weighted")
+            effects[feat][m] = baselines[m] - metric_functions[m](lbl_argmax, test_predictions, average="weighted")
 
     print("Writing analysis...")
     df = pd.DataFrame(effects)
@@ -761,7 +762,7 @@ class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, keys, labels):
+    def __init__(self, ax, fig, X_test, y_test, keys, labels, top_selector):
         self.ax = ax
         self.fig = fig
         self.X_test = X_test
@@ -769,6 +770,9 @@ class Plotter:
         self.keys = keys
         self.labels = labels
         self.first_time = True
+        self.front_feature = 0
+        self.top_selector = top_selector
+        self.all_colors = [colors(i) for i in range(len(self.y_test))]
 
     # Draw fresh scatterplot with the current features
     def update_scatter(self):
@@ -776,6 +780,17 @@ class Plotter:
         self.ax.clear()
 
         s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
+        front_ax_1 = []
+        front_ax_2 = []
+        front_lbl = []
+        for i in range(len(self.y_test)):
+            if self.y_test[i] != self.front_feature: continue
+            front_ax_1.append(self.X_test[i,self.feature_1])
+            front_ax_2.append(self.X_test[i,self.feature_2])
+            front_lbl.append(self.y_test[i])
+
+        color = self.all_colors[self.front_feature]
+        front = self.ax.scatter(front_ax_1, front_ax_2, color=color)
         
         if self.first_time:
             self.fig.legend(s.legend_elements()[0], self.labels,
@@ -806,6 +821,16 @@ class Plotter:
         if self.feature_2 > -len(self.X_test[0]): self.feature_2 -= 1
         self.update_scatter()
 
+    def put_front(self, text):
+        if text in self.labels:
+            self.top_selector.label.set_color('green')
+            self.front_feature = self.labels.index(text)
+            self.update_scatter()
+        else:
+            self.top_selector.label.set_color('red')
+            print(f"ERR: CST {text} not found in data ({','.join(self.labels)})")
+            self.fig.canvas.draw_idle()
+
 # Plot boundary line of two features
 def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor, 
                       all_labels: list[str], keys: list[str]) -> None:
@@ -826,28 +851,34 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
     X_test = X_test.cpu().numpy()
     
     # Create subplot instance
-    fig, ax = plt.subplots(figsize=(7,6))
+    fig, ax = plt.subplots(figsize=(7,7))
 
-    plotter = Plotter(ax, fig, X_test, y_test, keys, all_labels) # Track plotting variables
+    selector_ax = plt.axes([0.30, 0.02, 0.5, 0.07])
+    top_selector = TextBox(selector_ax, "CST rendered on top:", color="green", hovercolor="blue",
+                           initial=all_labels[0])
+
+    plotter = Plotter(ax, fig, X_test, y_test, keys, all_labels, top_selector) # Track plotting variables
     plotter.update_scatter()
 
     # Add buttons to the subplot
-    plt.subplots_adjust(bottom=0.2)
-    next_f1_ax = plt.axes([0.75, 0.05, 0.15, 0.07])
-    prev_f1_ax = plt.axes([0.58, 0.05, 0.15, 0.07])
-    next_f2_ax = plt.axes([0.41, 0.05, 0.15, 0.07])
-    prev_f2_ax = plt.axes([0.24, 0.05, 0.15, 0.07])
+    plt.subplots_adjust(bottom=0.25)
+    next_f1_ax = plt.axes([0.20, 0.1, 0.15, 0.07])
+    prev_f1_ax = plt.axes([0.36, 0.1, 0.17, 0.07])
+    next_f2_ax = plt.axes([0.54, 0.1, 0.15, 0.07])
+    prev_f2_ax = plt.axes([0.70, 0.1, 0.19, 0.07])
 
     button_next_f1 = Button(next_f1_ax, "Next feature1", color="green", hovercolor="blue")
     button_prev_f1 = Button(prev_f1_ax, "Previous featue1", color="green", hovercolor="blue")
     button_next_f2 = Button(next_f2_ax, "Next feature2", color="green", hovercolor="blue")
     button_prev_f2 = Button(prev_f2_ax, "Previous feature2", color="green", hovercolor="blue")
-    
+
     # Register click event callbacks to the plotter's handler functions
     button_next_f1.on_clicked(plotter.next_f1)
     button_prev_f1.on_clicked(plotter.prev_f1)
     button_next_f2.on_clicked(plotter.next_f2)
-    button_prev_f2.on_clicked(plotter.prev_f2)    
+    button_prev_f2.on_clicked(plotter.prev_f2)
+
+    top_selector.on_submit(plotter.put_front)
 
     plt.show()
 
@@ -1094,7 +1125,7 @@ if __name__ == "__main__":
     arguments.add_argument("-pa","--patience", type=int, help="How many stagnant epochs to wait to cut lr?", default=100)
     arguments.add_argument("-sd","--seed", type=int, help="Seed rng", default=None)
     arguments.add_argument("-hn","--hidden-neurons", type=int, help="Number of hidden layers to use. Default is (2/3)*in_featres + classes", default=None)
-    arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs", default=True)
+    arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Show verbose debugging and graphs")
     arguments.add_argument("-ts","--train-simple", action=argparse.BooleanOptionalAction, help="Train a version based on significant parameters", default=False)
     arguments.add_argument("-ta","--test-accuracy", action=argparse.BooleanOptionalAction, help="Classify data provided by input-test and check accuracy", default=False)
     arguments.add_argument("-tm","--train-multiple", type=int, help="How many models should be trained? Picks best", default=1)

@@ -172,5 +172,6 @@ scripts/produce_figures/*.csv
 scripts/produce_figures/*.jpeg
 
 scratch/
+scratch2/
 
 data/

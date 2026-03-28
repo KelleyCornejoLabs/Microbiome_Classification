@@ -46,7 +46,7 @@ if __name__ == "__main__":
     arguments = parser.add_argument_group("Arguments")
     arguments.add_argument("-itr", "--input-train", help="Path to train input data as csv", required=True)
     arguments.add_argument("-ite", "--input-test", help="Path to test input data as csv", required=True)
-    arguments.add_argument("-o", "--output", help="Path to output file", default="out.csv")
+    arguments.add_argument("-o", "--output", help="Path to output file", default=None)
     arguments.add_argument("-n", "--norm", help="noralization", default="none")
     arguments.add_argument("-f", "--features", help="max featuers", default="sqrt")
     arguments.add_argument("-dbg","--debug", action=argparse.BooleanOptionalAction, help="Create pop up of confusion matrix", default=True)
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     # Maybe have more estimators that look at a smaller set of features? To try and find several linear differences instead of looking so broadly?
     # Train model
-    model = RandomForestClassifier(n_estimators=100, max_features="sqrt")
+    model = RandomForestClassifier(n_estimators=10000, max_features="sqrt")
     model.fit(X_train, y_train)
 
     if test_acc:
@@ -91,6 +91,9 @@ if __name__ == "__main__":
             disp.plot()
             plt.show()
             print(f"Conf mat: \n{conf_mat}")
+
+    if args.output == None:
+        exit(0)
 
     # Predict outputs
     output = model.predict(X_test)

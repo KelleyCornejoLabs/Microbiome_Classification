@@ -378,7 +378,7 @@ def plot_single_pacmap(X_data, y_data, universe, ax, divisions=[-1], marks=['o']
 def fig_3(train_data, test_data, validate_data, figure=3):
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 4))
 
-    # X_data, y_data, universe = extract_numpy(ravel_data, "HC_subCST", ["sampleID", "read_count"])
+    # X_data, y_data, universe = extract_numpy(france_data, "HC_subCST", ["sampleID", "read_count"])
     # plot_single_pacmap(X_data, y_data, universe, axes)
 
 
@@ -437,7 +437,7 @@ def fig_3(train_data, test_data, validate_data, figure=3):
     axes[0].scatter(f0(train_transformed), f1(train_transformed), cmap=adjusted_cmap, marker="x", c=f2(train_transformed), s=2.6)
     axes[1].scatter(f0(test_transformed), f1(test_transformed), cmap=adjusted_cmap, marker="x", c=f2(test_transformed), s=2.6)
     axes[2].scatter(f0(validation_transformed), f1(validation_transformed), cmap=adjusted_cmap, marker="x", c=f2(validation_transformed), s=2.6)
-    # plot_single_pacmap(X_data, y_data, universe, axes, divisions=[len(ravel_common_data), -1], marks=['+', 'x'])
+    # plot_single_pacmap(X_data, y_data, universe, axes, divisions=[len(france_common_data), -1], marks=['+', 'x'])
 
     handles = [mpl.patches.Patch(color=apply_col(i), label=all_labels[i]) for i in range(0,len(all_labels))]
     axes[0].legend(handles=handles, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1, fontsize='small')
@@ -453,10 +453,10 @@ def fig_3(train_data, test_data, validate_data, figure=3):
     plt.savefig(f"fig{figure}.jpeg")
     plt.show()
 
-def plot_pacmaps(ravel_data, hickey_data, ashley_data, edlund_data, figure=3):
+def plot_pacmaps(france_data, hickey_data, ashley_data, edlund_data, figure=3):
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 4))
 
-    dfs = [ravel_data]#, hickey_data]
+    dfs = [france_data]#, hickey_data]
     label_col = ["HC_subCST"]#, None if figure == 3 else "subCST"]
     nondata_cols = [["sampleID", "read_count"]]#, ["sampleID"]]
 
@@ -489,21 +489,21 @@ def extract_cols(data: pd.DataFrame, keep_columns):
     data = data[keep_columns]
     return data
 
-def plot_hickey_valencia_comparison(ravel_data, hickey_data, common_cols, figure=4):
+def plot_hickey_valencia_comparison(france_data, hickey_data, common_cols, figure=4):
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 5))
 
-    ravel_common_data = extract_cols(ravel_data, common_cols)
+    france_common_data = extract_cols(france_data, common_cols)
     hickey_common_data = extract_cols(hickey_data, common_cols)
 
-    ravel_classification = ravel_data["HC_subCST"]+" ref"
+    france_classification = france_data["HC_subCST"]+" ref"
     hickey_classification = hickey_data["subCST"]
 
-    all_data = pd.concat([ravel_common_data, hickey_common_data], axis=0)
-    all_class = pd.concat([ravel_classification, hickey_classification], axis=0)
+    all_data = pd.concat([france_common_data, hickey_common_data], axis=0)
+    all_class = pd.concat([france_classification, hickey_classification], axis=0)
     all_data["label"] = all_class
     all_data.to_csv("test.csv")
 
-    print("Div:", len(ravel_common_data))
+    print("Div:", len(france_common_data))
 
     # universe = list(set(all_class))
 
@@ -535,7 +535,7 @@ def plot_hickey_valencia_comparison(ravel_data, hickey_data, common_cols, figure
     axes[1].set_title("B)", loc='left')
     axes[0].scatter(X_transformed[:, 0], X_transformed[:, 1], cmap=opaque_cmap, marker="x", c=y_data, s=2.6)
     axes[1].scatter(X_transformed[:, 0], X_transformed[:, 1], cmap=adjusted_cmap, marker="x", c=y_data, s=2.6)
-    # plot_single_pacmap(X_data, y_data, universe, axes, divisions=[len(ravel_common_data), -1], marks=['+', 'x'])
+    # plot_single_pacmap(X_data, y_data, universe, axes, divisions=[len(france_common_data), -1], marks=['+', 'x'])
 
     handles = [mpl.patches.Patch(color=apply_col(i, 1), label=universe[i]) for i in range(len(universe))]
     adj_handles = [mpl.patches.Patch(color=apply_col(i), label=universe[i]) for i in range(len(universe))]
@@ -549,21 +549,91 @@ def plot_hickey_valencia_comparison(ravel_data, hickey_data, common_cols, figure
     plt.savefig(f"fig{figure}.jpeg")
     plt.show()
 
-def get_pacmap_csv(ravel_data, hickey_data, common_cols):
-    ravel_common_data = extract_cols(ravel_data, common_cols)
+def plot_3_study_classifications(baseline_data, study_1, study_2, common_cols, figure, study_1_name="Hyuhn", study_2_name="Edlund"):
+    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 5))
+
+    base_common_data = extract_cols(baseline_data, common_cols)
+    study_1_common_data = extract_cols(study_1, common_cols)
+    study_2_common_data = extract_cols(study_2, common_cols)
+
+    base_classification = baseline_data["HC_subCST"]+" ref"
+    study_1_classification = study_1["subCST"]+" "+study_1_name
+    study_2_classification = study_2["subCST"]+" "+study_2_name
+
+    all_data = pd.concat([base_common_data, study_1_common_data, study_2_common_data], axis=0)
+    all_class = pd.concat([base_classification, study_1_classification, study_2_classification], axis=0)
+    all_data["label"] = all_class
+    # all_data.to_csv("test.csv")
+
+    # print("Div:", len(base_common_data))
+
+    # universe = list(set(all_class))
+
+    # all_data[all_data.isna()] = 0
+
+    X_data, y_data, universe = extract_numpy(all_data, "label")
+    print(list(set(y_data)))
+
+    embedding = pacmap.PaCMAP()
+    X_transformed = embedding.fit_transform(X_data, init="pca")
+
+    cmap = blair_cmap#plt.get_cmap("gist_rainbow")
+    # cmap = plt.get_cmap("gist_rainbow")
+
+    unique_labels = list(map(lambda x:x.split(" ")[0], universe))
+
+    print(universe)
+
+    norm = mpl.colors.Normalize(vmin=0, vmax=len(universe))
+    def apply_col(x, opacity=0.05, make_opaque=None):
+        label = universe[x]
+        col = list(cmap(norm(x))) #unique_labels.index(label.split(" ")[0])
+        if make_opaque != None and make_opaque not in universe[x]:
+            # If make_opaque substring not found in this label, make it transparent
+            col = (np.float64(col[0]),np.float64(col[1]),np.float64(col[2]), np.float64(opacity))
+        return col
+
+    opaque_cmap = ListedColormap([apply_col(i, 1) for i in range(0, len(universe))])
+    show_1_cmap = ListedColormap([apply_col(i, 0.05, study_1_name) for i in range(0, len(universe))])
+    show_2_cmap = ListedColormap([apply_col(i, 0.05, study_2_name) for i in range(0, len(universe))])
+
+    axes[0].set_title("A)", loc='left')
+    axes[1].set_title("B)", loc='left')
+    axes[2].set_title("C)", loc='left')
+    axes[0].scatter(X_transformed[:, 0], X_transformed[:, 1], cmap=opaque_cmap, marker="x", c=y_data, s=2.6)
+    axes[1].scatter(X_transformed[:, 0], X_transformed[:, 1], cmap=show_1_cmap, marker="x", c=y_data, s=2.6)
+    axes[2].scatter(X_transformed[:, 0], X_transformed[:, 1], cmap=show_2_cmap, marker="x", c=y_data, s=2.6)
+    # plot_single_pacmap(X_data, y_data, universe, axes, divisions=[len(france_common_data), -1], marks=['+', 'x'])
+
+    handles = [mpl.patches.Patch(color=apply_col(i, 1), label=universe[i]) for i in range(len(universe))]
+    adj_1_handles = [mpl.patches.Patch(color=apply_col(i, 0.05, study_1_name), label=universe[i]) for i in range(len(universe))]
+    adj_2_handles = [mpl.patches.Patch(color=apply_col(i, 0.05, study_2_name), label=universe[i]) for i in range(len(universe))]
+    axes[0].legend(handles=handles, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1, fontsize='small')
+    axes[1].legend(handles=adj_1_handles, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1, fontsize='small')
+    axes[2].legend(handles=adj_2_handles, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1, fontsize='small')
+    
+    plt.tight_layout()
+    # plt.title("Confusion Matrices for all Methods")
+    print(f"Saving to fig{figure}")
+    plt.savefig(f"fig{figure}.svg", format='svg')
+    plt.savefig(f"fig{figure}.jpeg")
+    plt.show()
+
+def get_pacmap_csv(france_data, hickey_data, common_cols):
+    france_common_data = extract_cols(france_data, common_cols)
     hickey_common_data = extract_cols(hickey_data, common_cols)
 
-    ravel_classification = pd.DataFrame({
-        "class": ravel_data["HC_subCST"],
-        "dataset": "Ravel"
+    france_classification = pd.DataFrame({
+        "class": france_data["HC_subCST"],
+        "dataset": "France"
     })
     hickey_classification = pd.DataFrame({
         "class": hickey_data["subCST"],
         "dataset": "Hickey"
     })
 
-    all_data = pd.concat([ravel_common_data, hickey_common_data], axis=0)
-    all_class = pd.concat([ravel_classification, hickey_classification], axis=0)
+    all_data = pd.concat([france_common_data, hickey_common_data], axis=0)
+    all_class = pd.concat([france_classification, hickey_classification], axis=0)
     all_data = pd.concat([all_class, all_data], axis=1)
 
     embedding = pacmap.PaCMAP()
@@ -605,37 +675,39 @@ def fig_1_2_main(args):
 
 
 def fig_3_6_main(args):
-    ravel_path = args.ravel_data
+    france_path = args.france_data
     hickey_path = args.hickey_data
     hyuhn_path = args.hyuhn_data
     edlund_path = args.edlund_data
 
-    ravel_data = pd.read_csv(ravel_path)
+    france_data = pd.read_csv(france_path)
     hickey_data = pd.read_csv(hickey_path)
     hyuhn_data = pd.read_csv(hyuhn_path)
     edlund_data = pd.read_csv(edlund_path)
 
-    ravel_train = pd.read_csv(args.ravel_train)
-    ravel_test = pd.read_csv(args.ravel_test)
-    ravel_validate = pd.read_csv(args.ravel_validate)
+    france_train = pd.read_csv(args.france_train)
+    france_test = pd.read_csv(args.france_test)
+    france_validate = pd.read_csv(args.france_validate)
 
-    fig = 8 if "clustered" in args.ravel_train else 3
+    if args.fig == None:
+        fig = 8 if "clustered" in args.france_train else 3
+    else: fig = args.fig
 
-    fig_3(ravel_train, ravel_test, ravel_validate, figure=fig)
-    # plot_pacmaps(ravel_data, hickey_data, hyuhn_data, edlund_data, figure=6)
+    fig_3(france_train, france_test, france_validate, figure=fig)
+    # plot_pacmaps(france_data, hickey_data, hyuhn_data, edlund_data, figure=6)
 
 def fig_4_main(args):
-    ravel_path = args.ravel_data
+    france_path = args.france_data
     hickey_path = args.hickey_data
     common_cols = args.common_cols.split(",")
 
-    ravel_data = pd.read_csv(ravel_path)
+    france_data = pd.read_csv(france_path)
     hickey_data = pd.read_csv(hickey_path)
 
-    fig = 9 if "manghi" in ravel_path else 4
+    fig = 9 if "manghi" in france_path else 4
 
-    plot_hickey_valencia_comparison(ravel_data, hickey_data, common_cols, figure=fig)
-    get_pacmap_csv(ravel_data, hickey_data, common_cols)
+    plot_hickey_valencia_comparison(france_data, hickey_data, common_cols, figure=fig)
+    get_pacmap_csv(france_data, hickey_data, common_cols)
 
 def fig_6_main(args):
     stratabionn_60_path = args.stratabionn_class_60
@@ -652,8 +724,22 @@ def fig_6_main(args):
     plot_bars_oral(validation_60_data, validation_80_data, stratabionn_60_data, stratabionn_80_data)
     plot_confusion_oral(validation_80_data, stratabionn_80_data)
 
+def fig_3_study_pacmap_main(args):
+    base_class = args.base_class
+    test_1_class = args.test_1_class
+    test_2_class = args.test_2_class
+    common_cols = args.common_cols.split(",")
+
+    base_class_data = pd.read_csv(base_class)
+    test_1_class_data = pd.read_csv(test_1_class)
+    test_2_class_data = pd.read_csv(test_2_class)
+
+    plot_3_study_classifications(base_class_data, test_1_class_data, test_2_class_data, common_cols, "3_study_")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plots various graphs")
+
+    parser.add_argument("--fig", help="name of figure", type=str)
 
     subparsers = parser.add_subparsers(dest='subcommand', help='Available subcommands')
 
@@ -661,6 +747,7 @@ if __name__ == "__main__":
     parser_fig_3_6 = subparsers.add_parser('fig_3_6', help='Figure 3 help')
     parser_fig_4 = subparsers.add_parser('fig_4', help='Figure 4 help')
     parser_fig_6 = subparsers.add_parser('fig_6', help='Figure 5 help')
+    parser_fig_3_study_pacmap = subparsers.add_parser('3_study_pacmap', help='3_study_pacmap help')
 
     # Argument group for figure 1
     fig_1_2_group = parser_fig_1_2.add_argument_group('Fig 1 and 2 Options')
@@ -675,19 +762,19 @@ if __name__ == "__main__":
 
     # Argument group for figure 3/6
     fig_3_6_group = parser_fig_3_6.add_argument_group('Fig 3 Options')
-    fig_3_6_group.add_argument("--ravel-data", help="Path to Ravel et al. data (VALENCIA formatted)", type=str)
+    fig_3_6_group.add_argument("--france-data", help="Path to France et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--hickey-data", help="Path to Hickey et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--hyuhn-data", help="Path to Hyuhn et al. data (VALENCIA formatted)", type=str)
     fig_3_6_group.add_argument("--edlund-data", help="Path to Edlund et al. data (VALENCIA formatted)", type=str)
-    fig_3_6_group.add_argument("--ravel-train", help="Path to training set of Ravel data", type=str)
-    fig_3_6_group.add_argument("--ravel-test", help="Path to testing set of Ravel data", type=str)
-    fig_3_6_group.add_argument("--ravel-validate", help="Path to validation set of Ravel data", type=str)
+    fig_3_6_group.add_argument("--france-train", help="Path to training set of France data", type=str)
+    fig_3_6_group.add_argument("--france-test", help="Path to testing set of France data", type=str)
+    fig_3_6_group.add_argument("--france-validate", help="Path to validation set of France data", type=str)
 
     # Argument group for figure 4
     fig_4_group = parser_fig_4.add_argument_group('Fig 4 Options')
-    fig_4_group.add_argument("--ravel-data", help="Path to classified Ravel et al. data", type=str)
+    fig_4_group.add_argument("--france-data", help="Path to classified France et al. data", type=str)
     fig_4_group.add_argument("--hickey-data", help="Path to classified Hickey et al. data", type=str)
-    fig_4_group.add_argument("--common_cols", help="Comma seperated common columns between ravel and hickey data", type=str)
+    fig_4_group.add_argument("--common_cols", help="Comma seperated common columns between france and hickey data", type=str)
 
     # Argument group for figure 4
     fig_6_group = parser_fig_6.add_argument_group('Fig 5 Options')
@@ -695,6 +782,13 @@ if __name__ == "__main__":
     fig_6_group.add_argument("--stratabionn-class-80", help="Classifications from Stratabionn 80/10/10", type=str)
     fig_6_group.add_argument("--validation-60", help="Classifications from 60% validaiton set", type=str)
     fig_6_group.add_argument("--validation-80", help="Classifications from 80% validaiton set", type=str)
+
+    # Argument group for figure 4
+    fig_3_study_pacmap = parser_fig_3_study_pacmap.add_argument_group('3_study_pacmap Options')
+    fig_3_study_pacmap.add_argument("--base-class", help="Base study classified", type=str)
+    fig_3_study_pacmap.add_argument("--test-1-class", help="Classifications from Stratabionn 80/10/10", type=str)
+    fig_3_study_pacmap.add_argument("--test-2-class", help="Classifications from 60% validaiton set", type=str)
+    fig_3_study_pacmap.add_argument("--common_cols", help="Comma seperated common columns", type=str)
 
 
     # Parse arguments
@@ -708,5 +802,7 @@ if __name__ == "__main__":
         fig_4_main(args)
     elif args.subcommand == 'fig_6':
         fig_6_main(args)
+    elif args.subcommand == '3_study_pacmap':
+        fig_3_study_pacmap_main(args)
     else:
         parser.print_help()

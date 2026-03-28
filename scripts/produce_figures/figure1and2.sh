@@ -24,23 +24,23 @@ if [[ "$VALENCIA_REPO" = "" ]]; then
     exit 1
 fi
 
-RAVEL_DATA="../../data/vaginal/Ravel"
+FRANCE_DATA="../../data/vaginal/France"
 
 # Start with clean empty temp directory
 # rm -rf $TMP_DIR
 # mkdir $TMP_DIR
 
-ALL_DATA_FORMATTED="$RAVEL_DATA/ravel_formatted_full.csv"
+ALL_DATA_FORMATTED="$FRANCE_DATA/france_formatted_full.csv"
 
 # Data used to train 60/20/20 stratabionn model
-PREFIX_DATA_60="$RAVEL_DATA/formatted_60"
+PREFIX_DATA_60="$FRANCE_DATA/formatted_60"
 TRAIN_DATA_60="${PREFIX_DATA_60}_train.csv"
 TEST_DATA_60="${PREFIX_DATA_60}_test.csv"
 VALIDATE_DATA_60="${PREFIX_DATA_60}_validation.csv"
 VALIDATE_DATA_60_NO_LBL="${PREFIX_DATA_60}_validation_unlabeled.csv"
 
 # Data used to train 80/10/10 stratabionn model
-PREFIX_DATA_80="$RAVEL_DATA/formatted_80"
+PREFIX_DATA_80="$FRANCE_DATA/formatted_80"
 TRAIN_DATA_80="${PREFIX_DATA_80}_train.csv"
 TEST_DATA_80="${PREFIX_DATA_80}_test.csv"
 VALIDATE_DATA_80="${PREFIX_DATA_80}_validation.csv"
@@ -66,11 +66,11 @@ CLASSIFIED_RF_60="$TMP_DIR/rf_classified_60"
 echo "Train a model using Stratabionn and classify validation data"
 
 # Train and classify using 60/20/20 data
-#python3 ../nn_classifier.py -itr $TRAIN_DATA_60 -ite $TEST_DATA_60 -p $MODEL_PATH_60 -tm 3 -wip
+# python3 ../nn_classifier.py -itr $TRAIN_DATA_60 -ite $TEST_DATA_60 -p $MODEL_PATH_60 -tm 3 -wip
 # python3 ../nn_classifier.py -ite $VALIDATE_DATA_60 -p $MODEL_PATH_60 -out $CLASSIFIED_STRATABIONN_60 -cl
 
 # Train and classify using 80/10/10 data
-#8python3 ../nn_classifier.py -itr $TRAIN_DATA_80 -ite $TEST_DATA_80 -p $MODEL_PATH_80 -tm 3 -wip
+# python3 ../nn_classifier.py -itr $TRAIN_DATA_80 -ite $TEST_DATA_80 -p $MODEL_PATH_80 -tm 3 -wip
 # python3 ../nn_classifier.py -ite $VALIDATE_DATA_80 -p $MODEL_PATH_80 -out $CLASSIFIED_STRATABIONN_80 -cl
 
 # Classify using Valencia
@@ -83,14 +83,14 @@ echo "Train a model using Stratabionn and classify validation data"
 # python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_60').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_60_NO_LBL', index=False)"
 # python3 -c "import pandas as pd; pd.read_csv('$VALIDATE_DATA_80').rename(columns={'HC_subCST': 'sub_CST'}).to_csv('$VALIDATE_DATA_80_NO_LBL', index=False)"
 
-echo "Running VALENCIA"
+# echo "Running VALENCIA"
 # python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_60 -i $VALIDATE_DATA_60_NO_LBL -o $CLASSIFIED_VALENCIA_60
 # python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_80 -i $VALIDATE_DATA_80_NO_LBL -o $CLASSIFIED_VALENCIA_80
 # python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_STOCK -i $VALIDATE_DATA_60_NO_LBL -o $CLASSIFIED_VALENCIA_60
 # python3 $VALENCIA_REPO/Valencia.py -ref $VALENCIA_CENTROIDS_STOCK -i $VALIDATE_DATA_80_NO_LBL -o $CLASSIFIED_VALENCIA_80
 
 # Classify using random forest
-echo "Running Random forest classifiers"
+# echo "Running Random forest classifiers"
 # python3 ../random_forest_classifier.py -itr $TRAIN_DATA_60 -ite $VALIDATE_DATA_60 -o $CLASSIFIED_RF_60.csv -dbg
 # python3 ../random_forest_classifier.py -itr $TRAIN_DATA_80 -ite $VALIDATE_DATA_80 -o $CLASSIFIED_RF_80.csv -dbg
 
@@ -102,8 +102,8 @@ echo "Running Random forest classifiers"
 
 # Only validate on validation set. Using everything skews results
 # Generate figures 1 and 2
-python utilities.py fig_1_and_2 --stratabionn-class-60 $CLASSIFIED_STRATABIONN_60 --stratabionn-class-80 $CLASSIFIED_STRATABIONN_80 \
-                                --forest-class-60 $CLASSIFIED_RF_60 --forest-class-80 $CLASSIFIED_RF_80 \
-                                --valencia-class-60 $CLASSIFIED_VALENCIA_60 \
-                                --validation-60 $VALIDATE_DATA_60 --validation-80 $VALIDATE_DATA_80 \
-                                --valencia-class-80 $CLASSIFIED_VALENCIA_80
+# python utilities.py fig_1_and_2 --stratabionn-class-60 $CLASSIFIED_STRATABIONN_60 --stratabionn-class-80 $CLASSIFIED_STRATABIONN_80 \
+#                                 --forest-class-60 $CLASSIFIED_RF_60 --forest-class-80 $CLASSIFIED_RF_80 \
+#                                 --valencia-class-60 $CLASSIFIED_VALENCIA_60 \
+#                                 --validation-60 $VALIDATE_DATA_60 --validation-80 $VALIDATE_DATA_80 \
+#                                 --valencia-class-80 $CLASSIFIED_VALENCIA_80
