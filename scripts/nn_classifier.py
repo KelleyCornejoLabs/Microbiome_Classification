@@ -472,36 +472,62 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
     return accuracies
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
-def perterbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
-                          features: list[str], metrics: list[str] = ["f1", "recall", "precision"]) -> dict[str, float]:
+def perturbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor,
+                          features: list[str], all_labels: list[str], metrics: list[str] = ["f1", "recall", "precision", "accuracy"]) -> dict[str, float]:
 
+<<<<<<< HEAD
     lbl_argmax = lbls.argmax(dim=1).cpu().numpy()
 
     metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
+=======
+    lbls_argmax = lbls.argmax(dim=1).cpu().numpy()
+
+    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score, "accuracy": lambda x,y,average: np.sum(np.equal(x,y)).item()/len(y)}
+>>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
     print("Running perterbation analysis...")
     with torch.inference_mode():
         test_predictions = model(data).argmax(dim=1).cpu().numpy()
 
+<<<<<<< HEAD
     baselines = {m:metric_functions[m](lbl_argmax, test_predictions, average="weighted") for m in metrics}
     
     effects = {f:{m:0 for m in metrics} for f in features}
+=======
+    for m in metrics:
+        baselines = {c: 0 for c in all_labels}
+>>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
 
-    for i, feat in enumerate(features):
-        data_cpy = data.detach().clone()
-        feature = data_cpy[:,i].cpu().numpy()
-        permuted = torch.Tensor(np.random.permutation(feature)).to(device)
-        data_cpy[:,i] = permuted
+        lbls_cst = lbls_argmax
+        predictions_cst = test_predictions
+        baselines = {c: metric_functions[m](lbls_cst[lbls_cst == i], predictions_cst[lbls_cst == i], average="weighted") for i,c in enumerate(all_labels)}
 
+<<<<<<< HEAD
         # Test accuracy on permuted data
         with torch.inference_mode():
             test_predictions = model(data_cpy).argmax(dim=1).cpu().numpy()
 
         for m in metrics:
             effects[feat][m] = baselines[m] - metric_functions[m](lbl_argmax, test_predictions, average="weighted")
+=======
+        effects = {f:{c: 0 for c in all_labels} for f in features}
 
-    print("Writing analysis...")
-    df = pd.DataFrame(effects)
-    df.to_csv("test_effects.csv")
+        for i, feat in enumerate(features):
+            data_cpy = data.detach().clone()
+            feature = data_cpy[:,i]
+            permuted = torch.Tensor(np.random.permutation(feature))
+            data_cpy[:,i] = permuted
+>>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
+
+            # Test accuracy on permuted data
+            with torch.inference_mode():
+                permuted_test_predictions = model(data_cpy).argmax(dim=1).cpu().numpy()
+
+            for idx, c in enumerate(all_labels):
+                effects[feat][c] = baselines[c] - metric_functions[m](lbls_cst[lbls_cst == idx], permuted_test_predictions[lbls_cst == idx], average="weighted")
+
+        print(f"Writing analysis for {m}...")
+        df = pd.DataFrame(effects).T.reset_index().rename(columns={"index":"feature"})
+        df.to_csv(f"perturbation_analysis_{m}.csv", index=False)
 
 # Evaluate feature importance using the model. Return dict of each feature's importance
 def feature_importance(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor, 
@@ -743,20 +769,6 @@ def test(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.Tensor,
     f1 = f1_score(lbls, predictions, average="weighted")
     print(f"F1 (weighted): {f1:.4f}")
 
-colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
-    (91, 142, 197, 1),
-    (125, 197, 236, 1),
-    (59, 160, 142, 1),
-    (19, 108, 45, 1),
-    (143, 142, 45, 1),
-    (217, 187, 108, 1),
-    (91, 19, 0, 1),
-    (198, 91, 108, 1),
-    (161, 59, 91, 1),
-    (125, 31, 76, 1),
-    (160, 59, 142, 1),
-    (220, 20, 60, 1)]])
-
 # Store all data relating to data visualization and associated callbacks
 class Plotter:
     feature_1 = 0
@@ -778,6 +790,20 @@ class Plotter:
     def update_scatter(self):
 
         self.ax.clear()
+
+        colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
+            (91, 142, 197, 1),
+            (125, 197, 236, 1),
+            (59, 160, 142, 1),
+            (19, 108, 45, 1),
+            (143, 142, 45, 1),
+            (217, 187, 108, 1),
+            (91, 19, 0, 1),
+            (198, 91, 108, 1),
+            (161, 59, 91, 1),
+            (125, 31, 76, 1),
+            (160, 59, 142, 1),
+            (220, 20, 60, 1)]])
 
         s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
         front_ax_1 = []
@@ -836,7 +862,7 @@ def plot_correlations(model: nn.Sequential, X_test: torch.Tensor, y_test: torch.
                       all_labels: list[str], keys: list[str]) -> None:
     """Plot the predicted class on 2d plot with two chosen features as x and y axis"""
 
-    if not plt:
+    if not mpl:
         print("Matplot required for plot_correlations.")
         return
 
@@ -1042,7 +1068,8 @@ def rename_best (path: str, best: int, models: int):
 
     os.rename(f"{path}_{best}_metrics.txt", f"{path}_metrics.txt")
     os.rename(f"{path}_{best}_nn.pt", f"{path}_nn.pt")
-    os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
+    if mpl:
+        os.rename(f"{path}_{best}_plt.png", f"{path}_plt.png")
 
     # Remove other models, skipping best
     for i in range(models):
@@ -1051,7 +1078,8 @@ def rename_best (path: str, best: int, models: int):
 
         os.remove(f"{path}_{i}_metrics.txt")
         os.remove(f"{path}_{i}_nn.pt")
-        os.remove(f"{path}_{i}_plt.png")
+        if mpl:
+            os.remove(f"{path}_{i}_plt.png")
 
 # Classify the samples in this file and add the classification to the output file
 def classify_data (model: nn.Sequential, path: str, out: str, all_labels: list[str], 
@@ -1280,8 +1308,8 @@ if __name__ == "__main__":
         print("Correct guesses\n1st guess, 2nd guess, ...")
         print(top_n_accuracy(classifier, X_test, y_test))
 
-        metrics = ["f1", "recall", "precision"]
-        perterbation_analysis(classifier, X_test, y_test, keys, metrics)
+        metrics = ["f1", "recall", "precision", "accuracy"]
+        perturbation_analysis(classifier, X_test, y_test, keys, all_labels, metrics)
 
     elif info:
         # Load model and print info
