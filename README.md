@@ -1,7 +1,9 @@
 # StrataBioNN Microbiome Classification
 This repository contains the scripts for the Microbiome Classification project
 
+<div style="text-align: center;">
 ![Logo](logo.png)
+</div>
 
 ## Main Scripts
 ### nn_classifier.py
