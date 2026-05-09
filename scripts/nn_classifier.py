@@ -475,40 +475,20 @@ def top_n_accuracy(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor)
 def perturbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.Tensor,
                           features: list[str], all_labels: list[str], metrics: list[str] = ["f1", "recall", "precision", "accuracy"]) -> dict[str, float]:
 
-<<<<<<< HEAD
-    lbl_argmax = lbls.argmax(dim=1).cpu().numpy()
-
-    metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score}
-=======
     lbls_argmax = lbls.argmax(dim=1).cpu().numpy()
 
     metric_functions = {"f1": f1_score, "recall": recall_score, "precision": precision_score, "accuracy": lambda x,y,average: np.sum(np.equal(x,y)).item()/len(y)}
->>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
     print("Running perterbation analysis...")
     with torch.inference_mode():
         test_predictions = model(data).argmax(dim=1).cpu().numpy()
 
-<<<<<<< HEAD
-    baselines = {m:metric_functions[m](lbl_argmax, test_predictions, average="weighted") for m in metrics}
-    
-    effects = {f:{m:0 for m in metrics} for f in features}
-=======
     for m in metrics:
         baselines = {c: 0 for c in all_labels}
->>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
 
         lbls_cst = lbls_argmax
         predictions_cst = test_predictions
         baselines = {c: metric_functions[m](lbls_cst[lbls_cst == i], predictions_cst[lbls_cst == i], average="weighted") for i,c in enumerate(all_labels)}
 
-<<<<<<< HEAD
-        # Test accuracy on permuted data
-        with torch.inference_mode():
-            test_predictions = model(data_cpy).argmax(dim=1).cpu().numpy()
-
-        for m in metrics:
-            effects[feat][m] = baselines[m] - metric_functions[m](lbl_argmax, test_predictions, average="weighted")
-=======
         effects = {f:{c: 0 for c in all_labels} for f in features}
 
         for i, feat in enumerate(features):
@@ -516,7 +496,6 @@ def perturbation_analysis(model: nn.Sequential, data: torch.Tensor, lbls: torch.
             feature = data_cpy[:,i]
             permuted = torch.Tensor(np.random.permutation(feature))
             data_cpy[:,i] = permuted
->>>>>>> e21b66f00fb1d3acbce5b92866d7f1a938d7f318
 
             # Test accuracy on permuted data
             with torch.inference_mode():
@@ -774,24 +753,7 @@ class Plotter:
     feature_1 = 0
     feature_2 = 0
 
-    def __init__(self, ax, fig, X_test, y_test, keys, labels, top_selector):
-        self.ax = ax
-        self.fig = fig
-        self.X_test = X_test
-        self.y_test = y_test
-        self.keys = keys
-        self.labels = labels
-        self.first_time = True
-        self.front_feature = 0
-        self.top_selector = top_selector
-        self.all_colors = [colors(i) for i in range(len(self.y_test))]
-
-    # Draw fresh scatterplot with the current features
-    def update_scatter(self):
-
-        self.ax.clear()
-
-        colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
+    colors = ListedColormap([(a[0]/255, a[1]/255, a[2]/255, a[3]) for a in [(45, 31, 125, 1),
             (91, 142, 197, 1),
             (125, 197, 236, 1),
             (59, 160, 142, 1),
@@ -805,7 +767,24 @@ class Plotter:
             (160, 59, 142, 1),
             (220, 20, 60, 1)]])
 
-        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=colors)
+    def __init__(self, ax, fig, X_test, y_test, keys, labels, top_selector):
+        self.ax = ax
+        self.fig = fig
+        self.X_test = X_test
+        self.y_test = y_test
+        self.keys = keys
+        self.labels = labels
+        self.first_time = True
+        self.front_feature = 0
+        self.top_selector = top_selector
+        self.all_colors = [self.colors(i) for i in range(len(self.y_test))]
+
+    # Draw fresh scatterplot with the current features
+    def update_scatter(self):
+
+        self.ax.clear()
+
+        s = self.ax.scatter(self.X_test[:,self.feature_1], self.X_test[:,self.feature_2], c=self.y_test, cmap=self.colors)
         front_ax_1 = []
         front_ax_2 = []
         front_lbl = []
@@ -1165,10 +1144,15 @@ if __name__ == "__main__":
     arguments.add_argument("-dr","--dropout", type=float, help="Dropout layer parameter", default=0.3)
     arguments.add_argument("-it","--importance-thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
     arguments.add_argument("-wip", "--weight-inverse-proportional", action=argparse.BooleanOptionalAction, help="Enables weighting of classes inversely proportional to their prevelance during loss calculation", default=False)
+    arguments.add_argument("-dc", "--disable-cuda", action=argparse.BooleanOptionalAction, help="Disable GPU acceleration", default=False)
 
 
     # Parse arguments
     args = parser.parse_args()
+
+    if args.disable_cuda:
+        print("Overriding gpu acceleration. If GPU was detected, it will NOT be used")
+        device = "cpu"
 
     # Set args to corresponding variables and preprosses if necessary
     linear = args.linear
