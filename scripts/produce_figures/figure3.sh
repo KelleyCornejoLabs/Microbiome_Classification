@@ -145,8 +145,8 @@ MANGHI_VALIDATE="$MANGHI_DATA_DIR/clustered_80_validation.csv"
 # BAKER_TEST_DATA_80="${BAKER_PREFIX_DATA_80}_test.csv"
 # BAKER_VALIDATE_DATA_80="${BAKER_PREFIX_DATA_80}_validation.csv"
 
-MANGHI_MODEL_LOCATION="$TMP_DIR/hickey_classifier"
-MANGHI_SIMPLE_MODEL_LOCATION="$TMP_DIR/hickey_classifier_simplified"
+MANGHI_MODEL_LOCATION="$TMP_DIR/manghi_classifier"
+MANGHI_SIMPLE_MODEL_LOCATION="$TMP_DIR/manghi_classifier_simplified"
 
 HYUHN_CLASSIFIED="$TMP_DIR/hyuhn_classified"
 
