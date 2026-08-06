@@ -2,7 +2,7 @@
 This repository contains the scripts for the Microbiome Classification project
 
 <p align="center">
-  <img src="logo.png" alt="Logo">
+  <img src="strata-single-wave-256.png" alt="Logo">
 </p>
 
 ## Main Scripts
