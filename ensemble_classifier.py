@@ -28,6 +28,8 @@ Usage mirrors nn_classifier.py:
   Bootstrap + feature-bagged ensemble:
     python3 ensemble_classifier.py -itr train.csv -ite test.csv -p ensemble_bag \\
         -es 10 -bs -ff 0.7 --strategy soft_vote
+
+IMPORTANT: only use this approach if the standard classification produces lower than desired accuracy in the classification.
 """
 
 import argparse
