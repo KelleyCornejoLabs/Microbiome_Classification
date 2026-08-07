@@ -17,15 +17,16 @@ def check_tols(train, test, validation, ref):
     validation_entries = validation.groupby(['HC_subCST']).count()['sampleID']
     validation_total_entries = validation_entries.sum()
     validation_prevelance = validation_entries/validation_total_entries
-    print(prevelance, validation_prevelance)
+    print(prevelance,"\n",  validation_prevelance)
+    print(len(ref), len(train)+len(test)+len(validation), len(train), len(test), len(validation))
 
     train_diffs = (abs(train_prevelance / prevelance) - 1) * 100
     test_diffs  = (abs(test_prevelance / prevelance) - 1) * 100
     validation_diffs  = (abs(validation_prevelance / prevelance) - 1) * 100
 
-    worst_train = train_diffs.max()
-    worst_test  = test_diffs.max()
-    worst_validation  = validation_diffs.max()
+    worst_train = abs(train_diffs).max()
+    worst_test  = abs(test_diffs).max()
+    worst_validation  = abs(validation_diffs).max()
 
     train_diffs = list(map(lambda x:f"{x:2.6f}%", train_diffs)) 
     test_diffs  = list(map(lambda x:f"{x:2.6f}%", test_diffs )) 
@@ -39,34 +40,64 @@ def check_tols(train, test, validation, ref):
     print(f"\033[31m\033[1mValidation: {', '.join(validation_diffs)} - worst tolerance is {worst_validation:2.6f}%", '\033[39m')
 
 if __name__ == "__main__":
-    ravel_path = "../data/vaginal/Ravel/"
-    train_path = f"{ravel_path}formatted_60_train.csv"
-    test_path = f"{ravel_path}formatted_60_test.csv"
-    test_path = f"{ravel_path}formatted_60_validation.csv"
-    ref_path = f"{ravel_path}ravel_formatted.csv"
-    
-    # ravel_path = "../data/oral/Manghi/"
-    # train_path = f"{ravel_path}clustered_60_train.csv"
-    # test_path = f"{ravel_path}clustered_60_test.csv"
-    # test_path = f"{ravel_path}clustered_60_validation.csv"
-    # ref_path = f"{ravel_path}manghi_classified.csv"
+    #ravel_path = "../../data/vaginal/France/"
+    #train_path = f"{ravel_path}formatted_80_train.csv"
+    #test_path = f"{ravel_path}formatted_80_test.csv"
+    #validation_path = f"{ravel_path}formatted_80_validation.csv"
+    #ref_path = f"{ravel_path}france_formatted.csv"
+
+    # ravel_path = "../../../gut/human_microbiome/"
+    # train_path = f"{ravel_path}reigon_data_80_train.csv"
+    # test_path = f"{ravel_path}reigon_data_80_test.csv"
+    # validation_path = f"{ravel_path}reigon_data_80_validation.csv"
+    # ref_path = f"{ravel_path}reigon_processed.csv"
+
+    ravel_path = "../../../gut/proper_enteroypers/"
+    train_path = f"{ravel_path}processed_truth_80_train.csv"
+    test_path = f"{ravel_path}processed_truth_80_test.csv"
+    validation_path = f"{ravel_path}processed_truth_80_validation.csv"
+    ref_path = f"{ravel_path}processed_truth.csv"
+
+    #ravel_path = "../../../gut/human_microbiome/"
+    #train_path = f"{ravel_path}concordant_set_80_train.csv"
+    #test_path = f"{ravel_path}concordant_set_80_test.csv"
+    #validation_path = f"{ravel_path}concordant_set_80_validation.csv"
+    #ref_path = f"{ravel_path}concordant_set_prcessed.csv"
+
+    #ravel_path = "../../data/oral/Manghi/"
+    #train_path = f"{ravel_path}clustered_80_train.csv"
+    #test_path = f"{ravel_path}clustered_80_test.csv"
+    #validation_path = f"{ravel_path}clustered_80_validation.csv"
+    #ref_path = f"{ravel_path}manghi_classified.csv"
 
     a = pd.read_csv(train_path)
     b = pd.read_csv(test_path)
-    c = pd.read_csv(test_path)
+    c = pd.read_csv(validation_path)
     ref = pd.read_csv(ref_path)
 
+    print("80% training")
     check_tols(a, b, c, ref)
+    #exit(1) # Reigon data only has 80%
 
-    train_path = f"{ravel_path}formatted_80_train.csv"
-    test_path = f"{ravel_path}formatted_80_test.csv"
-    test_path = f"{ravel_path}formatted_80_validation.csv"
-    # train_path = f"{ravel_path}clustered_80_train.csv"
-    # test_path = f"{ravel_path}clustered_80_test.csv"
-    # test_path = f"{ravel_path}clustered_80_validation.csv"
+    #train_path = f"{ravel_path}formatted_60_train.csv"
+    #test_path = f"{ravel_path}formatted_60_test.csv"
+    #validation_path = f"{ravel_path}formatted_60_validation.csv"
+
+    train_path = f"{ravel_path}processed_truth_60_train.csv"
+    test_path = f"{ravel_path}processed_truth_60_test.csv"
+    validation_path = f"{ravel_path}processed_truth_60_validation.csv"
+
+    #train_path = f"{ravel_path}concordant_set_60_train.csv"
+    #test_path = f"{ravel_path}concordant_set_60_test.csv"
+    #validation_path = f"{ravel_path}concordant_set_60_validation.csv"
+    
+    #train_path = f"{ravel_path}clustered_60_train.csv"
+    #test_path = f"{ravel_path}clustered_60_test.csv"
+    #test_path = f"{ravel_path}clustered_60_validation.csv"
 
     a = pd.read_csv(train_path)
     b = pd.read_csv(test_path)
-    c = pd.read_csv(test_path)
+    c = pd.read_csv(validation_path)
 
+    print("60% training")
     check_tols(a, b, c, ref)

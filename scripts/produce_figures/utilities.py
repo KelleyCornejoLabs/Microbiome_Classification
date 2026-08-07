@@ -104,6 +104,94 @@ def plot_bars_oral(validation_60, validation_80, stratabionn_60_data, stratabion
     plt.savefig("fig6.svg", format='svg')
     plt.show()
 
+def plot_bars_gut(validation_80, enterotyper_80_data, stratabionn_80_data, fig_num):
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
+
+    print(len(validation_80), len(enterotyper_80_data))
+    print(len(validation_80), len(stratabionn_80_data))
+
+    entero_80_accuracy = round(accuracy_test(validation_80, enterotyper_80_data) / 100, 3)
+    strata_80_accuracy = round(accuracy_test(validation_80, stratabionn_80_data) / 100, 3)
+
+    entero_80_f1 = round(f1_score(validation_80, enterotyper_80_data, average="weighted"), 3)
+    strata_80_f1 = round(f1_score(validation_80, stratabionn_80_data, average="weighted"), 3)
+
+    entero_80_precision = round(precision_score(validation_80, enterotyper_80_data, average="weighted"), 3)
+    strata_80_precision = round(precision_score(validation_80, stratabionn_80_data, average="weighted"), 3)
+
+    entero_80_recall = round(recall_score(validation_80, enterotyper_80_data, average="weighted"), 3)
+    strata_80_recall = round(recall_score(validation_80, stratabionn_80_data, average="weighted"), 3)
+
+    # axes[0,0].set_title("Accuracy")
+    # axes[1,0].set_title("F1 Score")
+    # axes[0,1].set_title("Recall")
+    # axes[1,1].set_title("Precision")
+    axes[0,0].set_title("A)", loc='left')
+    axes[1,0].set_title("B)", loc='left')
+    axes[0,1].set_title("C)", loc='left')
+    axes[1,1].set_title("D)", loc='left')
+
+    colors = ["red", "lightcoral", "blue", "lightblue", "green", "lightgreen"]
+
+    # TODO: Should we use these?
+    axes[0,0].set_ylim(entero_80_accuracy*0.9, 1)
+    axes[0,1].set_ylim(entero_80_f1*0.9, 1)
+    axes[1,0].set_ylim(entero_80_recall*0.9, 1)
+    axes[1,1].set_ylim(entero_80_precision*0.9, 1)
+    
+    
+    bars = [[None for _ in range(2)] for _ in range(2)]
+
+    bars[0][0]=axes[0,0].bar([1,2,3,4,5,6], [entero_80_accuracy, 
+                                strata_80_accuracy],  
+                                color=colors,
+                                tick_label=["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"])
+    axes[0,0].set_xticklabels(["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"], rotation=45, ha='right')
+
+    bars[0][1]=axes[0,1].bar([1,2,3,4,5,6], [entero_80_accuracy, 
+                                strata_80_accuracy],
+                            color=colors,
+                            tick_label=["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"])
+    axes[0,1].set_xticklabels(["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"], rotation=45, ha='right')
+
+    bars[1][0]=axes[1,0].bar([1,2,3,4,5,6], [entero_80_accuracy, 
+                                strata_80_accuracy],
+                            color=colors,
+                            tick_label=["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"])
+    axes[1,0].set_xticklabels(["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"], rotation=45, ha='right')
+
+    bars[1][1]=axes[1,1].bar([1,2,3,4,5,6], [entero_80_accuracy, 
+                                strata_80_accuracy],
+                            color=colors,
+                            data=[1,2,3,4,5,6],
+                            tick_label=["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"])
+    axes[1,1].set_xticklabels(["Enterotyper (80% training)", 
+                                "Stratabionn (80% training)"], rotation=45, ha='right')
+
+
+
+    # for x,y in [(0,0), (0,1), (1,0), (1,1)]:
+    #     for c in axes[x,y].containers: axes[x,y].bar_label(c, fmt='%2.3f', label_type='center')
+
+    for x, y in [(0,0), (0,1), (1,0), (1,1)]:
+        axes[x,y].set_xlabel("Tool Name")
+        axes[x,y].set_ylabel(f"Value {'(%)' if (x,y) == (0,0) else '(decimal)'}")
+        axes[x,y].bar_label(bars[x][y])
+
+    plt.tight_layout()
+    # plt.title("Performance Metrics for all Methods")
+    plt.savefig(f"fig{fig_num}_bars.svg", format='svg')
+    plt.savefig(f"fig{fig_num}_bars.jpeg")
+    plt.savefig(f"fig{fig_num}_bars.pdf", format="pdf")
+    plt.show()
+
 def plot_bars(validation_60, validation_80, valencia_60_data, valencia_80_data, stratabionn_60_data, stratabionn_80_data, forest_60_data, forest_80_data):
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 8))
 
@@ -309,6 +397,62 @@ def plot_confusion(validation_80, valencia_80_data, stratabionn_80_data, forest_
     # plt.title("Confusion Matrices for all Methods")
     plt.savefig("fig2.svg", format='svg')
     plt.savefig("fig2.jpeg")
+    plt.show()
+
+def plot_confusion_gut(validation_80, stratabionn_80_data, enterotyper_80_data, fig_num):
+    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
+
+    all_lbls = sorted(list(set(validation_80)))
+
+
+    def lbl_to_idx(lbl):
+        return all_lbls.index(lbl)
+    
+    def idx_to_lbl(idx):
+        return all_lbls[idx]
+    
+    validation_80 = list(map(lbl_to_idx, validation_80))
+    enterotyper_80_data = list(map(lbl_to_idx, enterotyper_80_data))
+    stratabionn_80_data = list(map(lbl_to_idx, stratabionn_80_data))
+
+    # enterotyper, strata, rf, strata - enterotyper. All 80% 
+    confmat_enterotyper = confusion_matrix(validation_80, enterotyper_80_data)
+    confmat_stratabionn = confusion_matrix(validation_80, stratabionn_80_data)
+    # cm_val_strata_diff = confusion_matrix(reference_data, enterotyper_data)
+
+    # blues_cm = mpl.colormaps.get_cmap('Blues')
+    # reds_cm = mpl.colormaps.get_cmap('Reds')
+    # colors = blues_cm(np.linspace(0, 1, 128))
+    # colors[:64, :] = reds_cm(np.linspace(1, 0, 64))
+    # colors[64:, :] = blues_cm(np.linspace(0, 1, 64))
+    # print(colors[0])
+    # RedBlues = ListedColormap(colors)
+
+    from matplotlib.colors import ListedColormap
+    blues_cm = mpl.colormaps.get_cmap("RdBu")
+    colors = blues_cm(np.linspace(0, 1, 128))
+    # colors[:24, 3] = 0.7
+    # colors[-24:, 3] = 0.7
+    colors[:, 3] = 0.65
+    RedBlues = ListedColormap(colors)
+
+    cms = [confmat_enterotyper, confmat_stratabionn, confmat_stratabionn - confmat_enterotyper]
+    cmaps = ["Blues", "Blues", "Blues", RedBlues]
+    coords = [(0,0), (0,1), (1,0), (1,1)]
+    # tools = ["enterotyper", "Stratabionn", "Random Forest", "Stratabionn - enterotyper"]
+    tools = ["A)", "B)", "C)", "D)"]
+
+    for i in range(len(cms)):
+        x, y = coords[i]
+        disp = ConfusionMatrixDisplay(confusion_matrix=cms[i], display_labels=all_lbls)
+        disp.plot(ax=axes[x, y], cmap=cmaps[i])
+        axes[x,y].set_xticklabels(all_lbls, rotation=45)
+        axes[x,y].set_title(tools[i], loc='left')
+    
+    plt.tight_layout()
+    # plt.title("Confusion Matrices for all Methods")
+    plt.savefig(f"fig{fig_num}_confusion.svg", format='svg')
+    plt.savefig(f"fig{fig_num}_confusion.jpeg")
     plt.show()
 
 def extract_numpy(df: pd.DataFrame, label_col:str, drop_cols:list[str] = [], norm:bool = True) -> (np.array, np.array, list):
@@ -648,6 +792,22 @@ def get_pacmap_csv(france_data, hickey_data, common_cols):
 
     info.to_csv("PACMAP_coords_vaginal.csv", index=False)
 
+def fig_entro_comp_main(args):
+    validation_80_path = args.validation_80
+    enterotyper_80_path = args.enterotyper_class_80
+    stratabionn_80_path = args.stratabionn_class_80
+    fig_num = args.fig
+
+    # Only validate on validation set. Using everything skews results
+    validation_80 = list(load_class(validation_80_path, class_lbl="HC_subCST")["subCST"])
+
+    enterotyper_80_data = list(load_class(valencia_80_path)["subCST"])
+    stratabionn_80_data = list(load_class(stratabionn_80_path)["subCST"])
+
+    plot_bars_gut(validation_80, enterotyper_80_data, stratabionn_80_data, fig_num)
+
+    plot_confusion_gut(validation_80, valencia_80_data, stratabionn_80_data, forest_80_data)
+
 def fig_1_2_main(args):
     validation_60_path = args.validation_60
     validation_80_path = args.validation_80
@@ -744,6 +904,7 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(dest='subcommand', help='Available subcommands')
 
     parser_fig_1_2 = subparsers.add_parser('fig_1_and_2', help='Figure 1 and 2 help')
+    parser_fig_gut = subparsers.add_parser('fig_gut', help='Figure gut help')
     parser_fig_3_6 = subparsers.add_parser('fig_3_6', help='Figure 3 help')
     parser_fig_4 = subparsers.add_parser('fig_4', help='Figure 4 help')
     parser_fig_6 = subparsers.add_parser('fig_6', help='Figure 5 help')
@@ -757,8 +918,13 @@ if __name__ == "__main__":
     fig_1_2_group.add_argument("--stratabionn-class-80", help="Classifications from Stratabionn 80/10/10", type=str)
     fig_1_2_group.add_argument("--forest-class-60", help="Classifications from Random Forest 60/20/20", type=str)
     fig_1_2_group.add_argument("--forest-class-80", help="Classifications from Random Forest 80/10/10", type=str)
-    fig_1_2_group.add_argument("--validation-60", help="Classifications from 60% validaiton set", type=str)
-    fig_1_2_group.add_argument("--validation-80", help="Classifications from 80% validaiton set", type=str)
+    fig_1_2_group.add_argument("--validation-60", help="Classifications from 60%% validaiton set", type=str)
+    fig_1_2_group.add_argument("--validation-80", help="Classifications from 80%% validaiton set", type=str)
+
+    fig_gut_group = parser_fig_gut.add_argument_group('Fig Gut Options')
+    fig_gut_group.add_argument("--enterotyper-class-80", help="Classifications from enterotyper", type=str)
+    fig_gut_group.add_argument("--stratabionn-class-80", help="Classifications from Stratabionn 80/10/10", type=str)
+    fig_gut_group.add_argument("--validation-80", help="Classifications from 80%% validaiton set", type=str)
 
     # Argument group for figure 3/6
     fig_3_6_group = parser_fig_3_6.add_argument_group('Fig 3 Options')
@@ -780,14 +946,14 @@ if __name__ == "__main__":
     fig_6_group = parser_fig_6.add_argument_group('Fig 5 Options')
     fig_6_group.add_argument("--stratabionn-class-60", help="Classifications from Stratabionn 60/20/20", type=str)
     fig_6_group.add_argument("--stratabionn-class-80", help="Classifications from Stratabionn 80/10/10", type=str)
-    fig_6_group.add_argument("--validation-60", help="Classifications from 60% validaiton set", type=str)
-    fig_6_group.add_argument("--validation-80", help="Classifications from 80% validaiton set", type=str)
+    fig_6_group.add_argument("--validation-60", help="Classifications from 60%% validaiton set", type=str)
+    fig_6_group.add_argument("--validation-80", help="Classifications from 80%% validaiton set", type=str)
 
     # Argument group for figure 4
     fig_3_study_pacmap = parser_fig_3_study_pacmap.add_argument_group('3_study_pacmap Options')
     fig_3_study_pacmap.add_argument("--base-class", help="Base study classified", type=str)
     fig_3_study_pacmap.add_argument("--test-1-class", help="Classifications from Stratabionn 80/10/10", type=str)
-    fig_3_study_pacmap.add_argument("--test-2-class", help="Classifications from 60% validaiton set", type=str)
+    fig_3_study_pacmap.add_argument("--test-2-class", help="Classifications from 60%% validaiton set", type=str)
     fig_3_study_pacmap.add_argument("--common_cols", help="Comma seperated common columns", type=str)
 
 
@@ -796,6 +962,8 @@ if __name__ == "__main__":
 
     if args.subcommand == 'fig_1_and_2':
         fig_1_2_main(args)
+    elif args.subcommand == 'fig_gut':
+        fig_entro_comp_main(args)
     elif args.subcommand == 'fig_3_6':
         fig_3_6_main(args)
     elif args.subcommand == 'fig_4':

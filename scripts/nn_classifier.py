@@ -1151,10 +1151,15 @@ if __name__ == "__main__":
     arguments.add_argument("-dr","--dropout", type=float, help="Dropout layer parameter", default=0.3)
     arguments.add_argument("-it","--importance-thresh", type=float, help="Minimum percent difference a feature makes to be considered important", default=0.5)
     arguments.add_argument("-wip", "--weight-inverse-proportional", action=argparse.BooleanOptionalAction, help="Enables weighting of classes inversely proportional to their prevelance during loss calculation", default=False)
+    arguments.add_argument("-dc", "--disable-cuda", action=argparse.BooleanOptionalAction, help="Disable GPU acceleration", default=False)
 
 
     # Parse arguments
     args = parser.parse_args()
+
+    if args.disable_cuda:
+        print("Overriding gpu acceleration. If GPU was detected, it will NOT be used")
+        device = "cpu"
 
     # Set args to corresponding variables and preprosses if necessary
     linear = args.linear
@@ -1284,13 +1289,12 @@ if __name__ == "__main__":
         classifier, _, _, features, _ = load_model(path, return_features = True, debug=debug)
 
         #print(features)
-        if args.input_train != None:
-            X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
-                            load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
-        else:
-            X_test, y_test, all_labels, ordered_prevelence, keys = \
-                    load_file(args.input_test, True, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
- 
+        # X_train, y_train, X_test, y_test, all_labels, ordered_prevelence, keys = \
+        #                 load_data(args.input_train, args.input_test, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
+
+        X_test, y_test, all_labels, ordered_prevelence, keys = \
+                        load_file(args.input_test, True, keep=features, debug=debug, regex_remove=regex_remove, norm=norm_fn)
+
         # Test model and evaluate it
         test(classifier, X_test, y_test, all_labels)
         plot_correlations(classifier, X_test, y_test, all_labels, keys)
