@@ -149,3 +149,30 @@ Boolean options to enable/disable a feature/mode should be used when you want to
 `--regex-remove` / `-rr` - When loading data use this regex to remove features\
 `--dropout` / `-dr` - Sets the dropout parameter. The droupout layer is between the two linear layers\
 `--importance-thresh` / `-it` - Sets the minimum affect on accuracy a feature must have for it to be considered important when training a simpler network (percent, default is 0.5% (`--importance-thresh 0.5`))
+
+### Dataset splitting options
+These are the options for the utility script `make_test_train_split.py`. It is very useful for splitting and reformatting datasets with:
+1. Sample identifiers
+1. Sample labels (for labeled data)
+1. Counts for each bacterial species
+
+Additional columns not used for training do not need to be removed, and can be ignored by the data splitting script. 
+
+An example is as follows:
+
+| SampleID | Label | L. Iners | \<More bacteria columns\> | 
+|----------|-------|----------|---------------------------|
+| Sample_1 | CST_0 | 1234 | ... |
+| Sample_2 | CST_1 | 6789 | ... |
+
+Arguments:
+- `--input`: Path to input dataset (superset)
+- `--output`: Prefix for output files, which will be of form `<prefix>_train.csv`, `<prefix>_test.csv`, and `<prefix>_validation.csv`
+- `--train-split`: The percentage of data to go in the training subset, represented as a number in the range 1-100. The default value is 60(%)
+- `--validation-split`: The percentage of data to go in the validation subset, represented as a number in the range 1-100. When this value is not specified the validation set it not generated, and the remaining data goes to the test subset
+- `--non-data`: A comma-seperated list of column names to leave out of the subsets. This can be used to leave metadata useful to researchers, without including them in the model's training data
+- `--sample_ids`: Name of the column containing the sample identifiers
+- `--label_col`: Name of column containing the labels for all samples. Required for labeled data, but not required for unlabeled data
+- `--read_counts`: **OPTIONAL** - Name of column containing total number of reads
+- `--tolerance`: **OPTIONAL** - Specifies the maximum allowed tolerance in CST prevelance between a subset and the superset. Calculated as $|\frac{P_1}{P_2}-1|*100$, where $P_1$ is the prevelence of a CST in one of the subsets, and $P_2$ is the prevelence of the CST in the superset. Value is specified as a percent, represented by a number in range $\leq100$. Decimals (ex. `0.01`$=0.01\%$) are acceptable
+- `--transpose`: **OPTIONAL** - Transpose a dataset if the columns should be the rows, and vice versa
